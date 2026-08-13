@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cyclecountreport_sg</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #898781;
+    --grid:        #e1e0d9;
+    --baseline:    #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --series-2:    #eb6834;
+    --series-3:    #1baf7a;
+    --series-4:    #eda100;
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-critical: #d03b3b;
+    --delta-up:    #006300;
+    --delta-down:  #d03b3b;
+    --wash-good:   rgba(12,163,12,0.16);
+    --wash-low:    rgba(208,59,59,0.16);
+    --wash-row-low:rgba(208,59,59,0.055);
+    --chip-good:   rgba(12,163,12,0.13);
+    --chip-low:    rgba(208,59,59,0.13);
+  }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --ink:         #ffffff;
+      --ink-2:       #c3c2b7;
+      --muted:       #898781;
+      --grid:        #2c2c2a;
+      --baseline:    #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --series-2:    #d95926;
+      --series-3:    #199e70;
+      --series-4:    #c98500;
+      --delta-up:    #0ca30c;
+      --wash-good:   rgba(12,163,12,0.26);
+      --wash-low:    rgba(208,59,59,0.30);
+      --wash-row-low:rgba(208,59,59,0.10);
+      --chip-good:   rgba(12,163,12,0.22);
+      --chip-low:    rgba(208,59,59,0.24);
+    }
+  }
+  :root[data-theme="dark"] {
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --ink:         #ffffff;
+    --ink-2:       #c3c2b7;
+    --muted:       #898781;
+    --grid:        #2c2c2a;
+    --baseline:    #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;
+    --series-2:    #d95926;
+    --series-3:    #199e70;
+    --series-4:    #c98500;
+    --delta-up:    #0ca30c;
+    --wash-good:   rgba(12,163,12,0.26);
+    --wash-low:    rgba(208,59,59,0.30);
+    --wash-row-low:rgba(208,59,59,0.10);
+    --chip-good:   rgba(12,163,12,0.22);
+    --chip-low:    rgba(208,59,59,0.24);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 14px 22px 10px;
+  }
+  .topbar h1 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: .1px; }
+  .topbar .sub { color: var(--muted); font-size: 12.5px; }
+  .topbar .spacer { flex: 1; }
+  .updated { color: var(--ink-2); font-size: 12.5px; }
+  .updated .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background: var(--status-good); margin-right:6px; vertical-align: 1px;}
+  .updated.err .dot { background: var(--status-critical); }
+  button, select, input[type=number] {
+    font: inherit; color: var(--ink);
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 7px; padding: 5px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--baseline); }
+  button.primary { font-weight: 600; }
+  a { color: var(--series-1); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .tabs { display: flex; gap: 4px; padding: 4px 22px 0; flex-wrap: wrap; border-bottom: 1px solid var(--grid); }
+  .tab {
+    border: none; background: none; padding: 8px 14px 9px; border-radius: 8px 8px 0 0;
+    color: var(--ink-2); font-weight: 550; position: relative; font-size: 13.5px;
+  }
+  .tab:hover { color: var(--ink); background: var(--surface-1); }
+  .tab.active { color: var(--ink); }
+  .tab.active::after {
+    content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2.5px;
+    background: var(--ink); border-radius: 2px;
+  }
+  .tab .flagn {
+    display:inline-block; min-width: 17px; padding: 0 4px; margin-left: 6px;
+    background: var(--status-critical); color:#fff; border-radius: 9px;
+    font-size: 11px; line-height: 17px; font-weight: 650; text-align:center;
+  }
+
+  .filters {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 12px 22px; font-size: 13px; color: var(--ink-2);
+  }
+  .filters label { display: flex; align-items: center; gap: 7px; }
+  .filters input[type=number] { width: 62px; padding: 4px 6px; }
+  .legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+  .legend .key { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); }
+
+  main { padding: 4px 22px 40px; max-width: 1500px; }
+  .loading, .fatal { padding: 60px 0; text-align: center; color: var(--ink-2); }
+  .fatal { color: var(--status-critical); }
+  .banner {
+    margin: 0 22px 10px; padding: 9px 14px; border-radius: 8px;
+    background: var(--wash-low); color: var(--ink); font-size: 13px;
+    display: flex; gap: 12px; align-items: center;
+  }
+  .banner button { padding: 3px 10px; }
+  .refreshing main { opacity: .55; transition: opacity .2s; }
+
+  .kpis { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 20px; }
+  .kpi {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 18px 12px; min-width: 170px; flex: 0 1 auto;
+  }
+  .kpi.click { cursor: pointer; }
+  .kpi.click:hover { border-color: var(--baseline); }
+  .kpi .lab { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .kpi .val { font-size: 27px; font-weight: 650; letter-spacing: -.3px; }
+  .kpi .val .unit { font-size: 15px; font-weight: 550; color: var(--ink-2); }
+  .kpi .sub2 { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+  .delta { font-size: 12.5px; font-weight: 600; }
+  .delta.up { color: var(--delta-up); }
+  .delta.down { color: var(--delta-down); }
+  .delta.flat { color: var(--muted); font-weight: 500; }
+
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 20px;
+  }
+  section.card h2 { font-size: 14px; font-weight: 650; margin: 0 0 4px; }
+  section.card .h2sub { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+
+  .attention { border-left: 3px solid var(--status-critical); }
+  .attn-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--grid); }
+  .attn-row:first-of-type { border-top: none; }
+  .attn-store { font-weight: 650; min-width: 118px; }
+  .attn-brand { color: var(--muted); font-size: 12px; min-width: 90px; }
+  .attn-chips { display: flex; gap: 4px; }
+  .attn-chip {
+    font-size: 11.5px; padding: 2px 7px; border-radius: 5px; font-variant-numeric: tabular-nums;
+  }
+  .attn-chip.low { background: var(--chip-low); }
+  .attn-chip.ok  { background: var(--page); border: 1px solid var(--grid); color: var(--ink-2); }
+  .attn-note { color: var(--ink-2); font-size: 12.5px; }
+  .goodchips { display: flex; gap: 7px; flex-wrap: wrap; }
+  .goodchip {
+    background: var(--chip-good); border-radius: 6px; padding: 3px 10px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .goodchip .v { font-weight: 500; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .allok { color: var(--ink-2); font-size: 13px; }
+
+  .matrix-scroll { overflow-x: auto; }
+  table.matrix { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; }
+  table.matrix th, table.matrix td { padding: 5px 9px; text-align: center; font-size: 12.5px; white-space: nowrap; }
+  table.matrix thead th { color: var(--muted); font-weight: 550; background: var(--surface-1); position: sticky; top: 0; }
+  table.matrix thead th.latestcol { color: var(--ink); font-weight: 700; }
+  table.matrix th.rowhead {
+    position: sticky; left: 0; z-index: 2; background: var(--surface-1);
+    text-align: left; font-weight: 600; color: var(--ink); min-width: 96px;
+  }
+  table.matrix thead th.rowhead { z-index: 3; }
+  tr.chronic th.rowhead, tr.chronic td { background: var(--wash-row-low); }
+  tr.chronic th.rowhead { color: var(--ink); }
+  .flagico { color: var(--status-critical); font-weight: 700; margin-left: 5px; font-size: 11.5px; }
+  .starico { color: var(--status-good); font-weight: 700; margin-left: 5px; font-size: 11.5px; }
+  td.cell { border-radius: 5px; cursor: default; }
+  td.cell.hasdata { cursor: pointer; }
+  td.cell.good { background: var(--wash-good); }
+  td.cell.low  { background: var(--wash-low); }
+  td.cell.mid  { background: var(--page); }
+  td.cell.nodata { color: var(--baseline); }
+  td.cell.pending { color: var(--muted); font-size: 11px; background: var(--page); }
+  td.cell:hover, td.cell:focus-visible { outline: 2px solid var(--baseline); outline-offset: -1px; }
+  tr.avgrow th.rowhead, tr.avgrow td { border-top: 1px solid var(--grid); color: var(--ink-2); font-weight: 600; background: var(--surface-1); }
+  td.dcell { font-weight: 600; }
+
+  .chart-wrap { width: 100%; position: relative; }
+  .chart-wrap svg { display: block; }
+  .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 2px 0 8px; }
+  .chart-legend .key { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
+  .linekey { width: 16px; height: 0; border-top: 2.5px solid; border-radius: 2px; }
+
+  details.tblview { margin-top: 10px; }
+  details.tblview summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; }
+  details.tblview table { border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  details.tblview th, details.tblview td { border: 1px solid var(--grid); padding: 4px 10px; font-size: 12.5px; text-align: right; }
+  details.tblview th:first-child, details.tblview td:first-child { text-align: left; }
+
+  #tooltip {
+    position: fixed; z-index: 50; pointer-events: none; display: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.14);
+    padding: 9px 12px; font-size: 12.5px; max-width: 320px;
+  }
+  #tooltip .tt-title { font-weight: 650; margin-bottom: 4px; }
+  #tooltip .tt-row { display: flex; gap: 8px; align-items: baseline; padding: 1.5px 0; }
+  #tooltip .tt-row .k { color: var(--ink-2); }
+  #tooltip .tt-row .v { font-weight: 650; margin-left: auto; font-variant-numeric: tabular-nums; }
+  #tooltip .lk { display:inline-block; width: 12px; border-top: 2.5px solid; border-radius: 2px; vertical-align: 3px; margin-right: 2px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>cyclecountreport_sg</h1>
+  <span class="sub" id="sheetLink"></span>
+  <span class="spacer"></span>
+  <span class="updated" id="updated"></span>
+  <button id="btnRefresh" class="primary" title="Fetch latest data from the Google Sheet">↻ Refresh</button>
+  <button id="btnTheme" title="Theme">◐</button>
+</header>
+<div id="bannerSlot"></div>
+<nav class="tabs" id="tabs"></nav>
+<div class="filters" id="filters"></div>
+<main id="content"><div class="loading">Loading cycle count data from Google Sheets…</div></main>
+<div id="tooltip" role="status"></div>
+
+<script>
+"use strict";
+
+/* ============================== CONFIG ============================== */
+const SHEET_ID = "1FrKrNzITjp_daSbNSaV43vUhzAQeVmiyK7AbtiXidDs";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/edit";
+const BRAND_NAMES = { "iORA": "iORA", "SANS": "SANS & SANS", "TRT": "TRT", "MONOLOQ": "MONOLOQ" };
+const IGNORE_SHEET = /stock\s*take/i;
+const REFRESH_MS = 5 * 60 * 1000;          // auto-refresh every 5 minutes
+const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
+
+const state = {
+  brands: [],            // [{sheet, name, weeks:[{serial,date,label,full,stores:[entry]}]}]
+  active: localStorage.getItem("cc.tab") || "overview",
+  window: +(localStorage.getItem("cc.window") || 12),   // 0 = all
+  sort: localStorage.getItem("cc.sort") || "store",
+  greenT: +(localStorage.getItem("cc.greenT") || 95),
+  lowT: +(localStorage.getItem("cc.lowT") || 92),
+  fetchedAt: null,
+  error: null,
+  refreshing: false,
+};
+
+/* ============================== UTILS ============================== */
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(kid));
+  }
+  return el;
+}
+const fmtPct = v => (v * 100).toFixed(1);
+function serialToDate(n) { return new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000); }
+function dLabel(d) { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }); }
+function dFull(d)  { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }); }
+
+/* ============================== XLSX FETCH + PARSE ============================== */
+async function unzip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), td = new TextDecoder();
+  let eocd = -1;
+  for (let i = buf.byteLength - 22, min = Math.max(0, buf.byteLength - 65558); i >= min; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("The response is not a spreadsheet file — check that the sheet is shared as 'Anyone with the link'.");
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const entries = {};
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const cmtLen = dv.getUint16(off + 32, true);
+    const lho = dv.getUint32(off + 42, true);
+    entries[td.decode(u8.subarray(off + 46, off + 46 + nameLen))] = { method, compSize, lho };
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+  return async function file(name) {
+    const e = entries[name];
+    if (!e) return null;
+    const nl = dv.getUint16(e.lho + 26, true), el = dv.getUint16(e.lho + 28, true);
+    const start = e.lho + 30 + nl + el;
+    const slice = u8.subarray(start, start + e.compSize);
+    if (e.method === 0) return td.decode(slice);
+    const stream = new Blob([slice]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return await new Response(stream).text();
+  };
+}
+const xml = s => new DOMParser().parseFromString(s, "application/xml");
+const tags = (doc, name) => Array.from(doc.getElementsByTagNameNS("*", name));
+
+function cellValue(c, shared) {
+  const t = c.getAttribute("t");
+  if (t === "inlineStr") { const s = c.textContent.trim(); return s ? { s, n: null } : null; }
+  const v = tags(c, "v")[0];
+  if (!v) return null;
+  const raw = v.textContent;
+  if (t === "s") { const s = (shared[parseInt(raw, 10)] || "").trim(); return s ? { s, n: null } : null; }
+  if (t === "str" || t === "e" || t === "b") { const s = raw.trim(); return s ? { s, n: null } : null; }
+  const n = parseFloat(raw);
+  return isNaN(n) ? null : { s: raw.trim(), n };
+}
+function sheetRows(doc, shared) {
+  const rows = [];
+  for (const rowEl of tags(doc, "row")) {
+    const cells = {};
+    let any = false;
+    for (const c of tags(rowEl, "c")) {
+      const ref = c.getAttribute("r") || "";
+      const col = ref.replace(/\d+/g, "");
+      const val = cellValue(c, shared);
+      if (val) { cells[col] = val; any = true; }
+    }
+    if (any) rows.push(cells);
+  }
+  return rows;
+}
+function pctOf(cell) {
+  if (!cell) return null;
+  let n = cell.n;
+  if (n == null) {
+    const m = /^(\d+(?:\.\d+)?)\s*%$/.exec(cell.s);
+    if (!m) return null;
+    n = parseFloat(m[1]) / 100;
+  }
+  if (n > 1.5 && n <= 100) n = n / 100;
+  return (n >= 0 && n <= 1.5) ? n : null;
+}
+function disp(cell) {
+  if (!cell) return "";
+  if (cell.n != null && Number.isFinite(cell.n)) {
+    return Number.isInteger(cell.n) ? String(cell.n) : cell.n.toFixed(2);
+  }
+  return cell.s;
+}
+
+function parseBrandRows(rows) {
+  const weeks = [];
+  let cur = null;
+  for (const cells of rows) {
+    const a = cells.A;
+    if (!a) continue;
+    if (a.n != null && a.n > 40000 && a.n < 60000) {           // week header row (date serial)
+      const date = serialToDate(a.n);
+      cur = { serial: a.n, date, label: dLabel(date), full: dFull(date), stores: [] };
+      weeks.push(cur);
+      continue;
+    }
+    if (!cur || a.n != null) continue;                          // store rows have text codes in col A
+    const parts = ["D", "E", "F"].map(col => pctOf(cells[col])).filter(p => p != null);
+    cur.stores.push({
+      store: a.s,
+      status: cells.B ? cells.B.s : "",
+      countDate: disp(cells.C),
+      parts,
+      pct: parts.length ? parts.reduce((x, y) => x + y, 0) / parts.length : null,
+      missing: disp(cells.G),
+      updateLoc: disp(cells.H),
+      checkIn: disp(cells.I),
+      remark: ["J", "K", "L", "M"].map(col => cells[col] ? cells[col].s : "").filter(Boolean).join(" — "),
+    });
+  }
+  const withInfo = weeks.filter(w => w.stores.some(s => s.status || s.pct != null || s.countDate));
+  // Keep weeks that have at least one recorded percentage, plus the newest
+  // in-progress week (statuses logged but no counts yet).
+  const withPct = withInfo.filter(w => w.stores.some(s => s.pct != null));
+  const last = withInfo[withInfo.length - 1];
+  if (last && !withPct.includes(last)) withPct.push(last);
+  return withPct;
+}
+
+async function loadData() {
+  const url = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/export?format=xlsx&_cb=" + Date.now();
+  let res;
+  try { res = await fetch(url, { cache: "no-store" }); }
+  catch (e) { throw new Error("Could not reach Google Sheets. Check your internet connection, and make sure this page is opened via the Start Dashboard launcher (not double-clicked as a file)."); }
+  if (!res.ok) throw new Error("Google Sheets returned HTTP " + res.status + ". Check that the sheet is shared as 'Anyone with the link — Viewer'.");
+  const file = await unzip(await res.arrayBuffer());
+
+  const wbDoc = xml(await file("xl/workbook.xml"));
+  const relDoc = xml(await file("xl/_rels/workbook.xml.rels"));
+  const ssXml = await file("xl/sharedStrings.xml");
+  const shared = ssXml ? tags(xml(ssXml), "si").map(si => si.textContent) : [];
+
+  const relMap = {};
+  for (const r of tags(relDoc, "Relationship")) {
+    relMap[r.getAttribute("Id")] = r.getAttribute("Target").replace(/^\//, "");
+  }
+  const brands = [];
+  for (const sh of tags(wbDoc, "sheet")) {
+    const name = sh.getAttribute("name");
+    if (IGNORE_SHEET.test(name)) continue;
+    const rid = sh.getAttribute("r:id") || sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+    let target = relMap[rid];
+    if (!target) continue;
+    if (!target.startsWith("xl/")) target = "xl/" + target.replace(/^\.\.\//, "");
+    const doc = xml(await file(target));
+    const weeks = parseBrandRows(sheetRows(doc, shared));
+    if (weeks.length) brands.push({ sheet: name, name: BRAND_NAMES[name] || name, weeks });
+  }
+  if (!brands.length) throw new Error("No cycle-count data found in the sheet — the tab layout may have changed.");
+  return brands;
+}
+
+/* ============================== DERIVED DATA ============================== */
+function windowWeeks(brand) {
+  const w = brand.weeks;
+  return state.window > 0 ? w.slice(-state.window) : w.slice();
+}
+function buildMatrix(brand) {
+  const weeks = windowWeeks(brand);
+  const stores = new Map();      // store -> entries[] aligned to weeks
+  weeks.forEach((week, wi) => {
+    for (const e of week.stores) {
+      if (!stores.has(e.store)) stores.set(e.store, new Array(weeks.length).fill(null));
+      const slot = stores.get(e.store);
+      if (!slot[wi] || (slot[wi].pct == null && e.pct != null)) slot[wi] = e;
+    }
+  });
+  const rows = [...stores.entries()].map(([store, entries]) => {
+    const counted = entries.map((e, wi) => e && e.pct != null ? { wi, pct: e.pct } : null).filter(Boolean);
+    const recent = counted.slice(-4);
+    const lows  = recent.filter(c => c.pct < state.lowT / 100).length;
+    const highs = recent.filter(c => c.pct >= state.greenT / 100).length;
+    let streak = 0;
+    for (let i = counted.length - 1; i >= 0 && counted[i].pct < state.lowT / 100; i--) streak++;
+    const latest = counted[counted.length - 1] || null;
+    const prev = counted[counted.length - 2] || null;
+    return {
+      store, entries, counted, recent,
+      chronicLow: counted.length >= 3 && lows >= 3,
+      chronicHigh: counted.length >= 3 && highs >= 3,
+      streak, latest,
+      delta: latest && prev ? latest.pct - prev.pct : null,
+    };
+  });
+  rows.sort((a, b) => {
+    if (state.sort === "lowfirst" || state.sort === "highfirst") {
+      const av = a.latest ? a.latest.pct : (state.sort === "lowfirst" ? 2 : -1);
+      const bv = b.latest ? b.latest.pct : (state.sort === "lowfirst" ? 2 : -1);
+      if (av !== bv) return state.sort === "lowfirst" ? av - bv : bv - av;
+    }
+    return a.store.localeCompare(b.store);
+  });
+  const avgs = weeks.map((w, wi) => {
+    const vals = rows.map(r => r.entries[wi]).filter(e => e && e.pct != null).map(e => e.pct);
+    return vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
+  });
+  return { weeks, rows, avgs };
+}
+
+/* ============================== TOOLTIP ============================== */
+const tooltip = document.getElementById("tooltip");
+function showTooltip(x, y, build) {
+  tooltip.textContent = "";
+  build(tooltip);
+  tooltip.style.display = "block";
+  const r = tooltip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > innerWidth - 8) left = x - r.width - 12;
+  if (top + r.height > innerHeight - 8) top = y - r.height - 12;
+  tooltip.style.left = Math.max(6, left) + "px";
+  tooltip.style.top = Math.max(6, top) + "px";
+}
+function hideTooltip() { tooltip.style.display = "none"; }
+addEventListener("scroll", hideTooltip, true);
+addEventListener("keydown", e => { if (e.key === "Escape") hideTooltip(); });
+
+function ttRow(k, v, color) {
+  const row = h("div", { class: "tt-row" });
+  if (color) { const lk = h("span", { class: "lk" }); lk.style.borderTopColor = color; row.append(lk); }
+  row.append(h("span", { class: "k" }, k), h("span", { class: "v" }, v));
+  return row;
+}
+
+/* ============================== LINE CHART ============================== */
+function lineChart({ series, weeks, height = 250, endLabels = false }) {
+  const wrap = h("div", { class: "chart-wrap" });
+  let lastW = 0;
+  function draw() {
+    const W = wrap.clientWidth;
+    if (!W || W < 100) return;
+    lastW = W;
+    wrap.textContent = "";
+    const H = height, padL = 42, padR = endLabels ? 108 : 18, padT = 12, padB = 28;
+    const n = weeks.length;
+    const xs = i => n <= 1 ? padL + (W - padL - padR) / 2 : padL + (W - padL - padR) * (i / (n - 1));
+    let vmin = Infinity, vmax = -Infinity;
+    for (const s of series) for (const v of s.values) if (v != null) { vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+    if (!isFinite(vmin)) { vmin = 0.9; vmax = 1.0; }
+    let lo = Math.floor(vmin * 100 - 0.6), hi = Math.ceil(vmax * 100 + 0.6);
+    if (hi - lo < 3) { lo -= 1; hi += 1; }
+    const step = (hi - lo) <= 6 ? 1 : (hi - lo) <= 12 ? 2 : 5;
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const ys = v => padT + (H - padT - padB) * (1 - (v * 100 - lo) / (hi - lo));
+
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const css = getComputedStyle(document.documentElement);
+    const C = v => css.getPropertyValue(v).trim();
+    const mk = (tag, attrs) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v); return el; };
+
+    for (let g = lo; g <= hi; g += step) {
+      svg.append(mk("line", { x1: padL, x2: W - padR, y1: ys(g / 100), y2: ys(g / 100), stroke: g === lo ? C("--baseline") : C("--grid"), "stroke-width": 1 }));
+      const t = mk("text", { x: padL - 7, y: ys(g / 100) + 3.5, "text-anchor": "end", "font-size": 11, fill: C("--muted") });
+      t.textContent = g + "%";
+      svg.append(t);
+    }
+    const every = Math.ceil(n / Math.max(3, Math.floor((W - padL - padR) / 62)));
+    weeks.forEach((w, i) => {
+      if (i % every && i !== n - 1) return;
+      if (i !== n - 1 && n - 1 - i < every * 0.6) return;
+      const t = mk("text", { x: xs(i), y: H - 9, "text-anchor": "middle", "font-size": 11, fill: C("--muted") });
+      t.textContent = w.label;
+      svg.append(t);
+    });
+
+    const colors = series.map((s, i) => C(s.colorVar || SERIES_VARS[i % SERIES_VARS.length]));
+    series.forEach((s, si) => {
+      let seg = [];
+      const flush = () => {
+        if (seg.length > 1) svg.append(mk("polyline", { points: seg.map(p => p.join(",")).join(" "), fill: "none", stroke: colors[si], "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        seg = [];
+      };
+      s.values.forEach((v, i) => { if (v == null) flush(); else seg.push([xs(i), ys(v)]); });
+      flush();
+      s.values.forEach((v, i) => {
+        if (v == null) return;
+        const solo = (i === 0 || s.values[i - 1] == null) && (i === n - 1 || s.values[i + 1] == null);
+        svg.append(mk("circle", { cx: xs(i), cy: ys(v), r: solo ? 3.5 : (i === n - 1 ? 3 : 2.2), fill: colors[si], stroke: C("--surface-1"), "stroke-width": 2 }));
+      });
+    });
+
+    if (endLabels) {
+      const ends = series.map((s, si) => {
+        for (let i = n - 1; i >= 0; i--) if (s.values[i] != null) return { y: ys(s.values[i]), name: s.name, color: colors[si], v: s.values[i] };
+        return null;
+      }).filter(Boolean).sort((a, b) => a.y - b.y);
+      for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+      for (const e of ends) {
+        const lk = mk("line", { x1: W - padR + 6, x2: W - padR + 20, y1: e.y, y2: e.y, stroke: e.color, "stroke-width": 2.5 });
+        const t = mk("text", { x: W - padR + 25, y: e.y + 3.5, "font-size": 11.5, fill: C("--ink-2") });
+        t.textContent = e.name;
+        svg.append(lk, t);
+      }
+    }
+
+    const vline = mk("line", { y1: padT, y2: H - padB, stroke: C("--baseline"), "stroke-width": 1, visibility: "hidden" });
+    svg.append(vline);
+    const hit = mk("rect", { x: padL, y: padT, width: Math.max(1, W - padL - padR), height: H - padT - padB, fill: "transparent" });
+    hit.style.cursor = "crosshair";
+    hit.addEventListener("pointermove", ev => {
+      const rect = svg.getBoundingClientRect();
+      const px = ev.clientX - rect.left;
+      let best = 0, bd = Infinity;
+      for (let i = 0; i < n; i++) { const d = Math.abs(xs(i) - px); if (d < bd) { bd = d; best = i; } }
+      vline.setAttribute("x1", xs(best)); vline.setAttribute("x2", xs(best));
+      vline.setAttribute("visibility", "visible");
+      showTooltip(ev.clientX, ev.clientY, el => {
+        el.append(h("div", { class: "tt-title" }, "Week of " + weeks[best].full));
+        series.forEach((s, si) => {
+          const v = s.values[best];
+          el.append(ttRow(s.name, v == null ? "—" : fmtPct(v) + "%", colors[si]));
+        });
+      });
+    });
+    hit.addEventListener("pointerleave", () => { vline.setAttribute("visibility", "hidden"); hideTooltip(); });
+    svg.append(hit);
+    wrap.append(svg);
+  }
+  const ro = new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastW) > 4) draw(); });
+  ro.observe(wrap);
+  setTimeout(draw, 0);
+  return wrap;
+}
+
+/* ============================== RENDER ============================== */
+const contentEl = document.getElementById("content");
+const tabsEl = document.getElementById("tabs");
+const filtersEl = document.getElementById("filters");
+
+function classify(pct) {
+  if (pct == null) return null;
+  if (pct >= state.greenT / 100) return "good";
+  if (pct < state.lowT / 100) return "low";
+  return "mid";
+}
+
+function renderTabs() {
+  tabsEl.textContent = "";
+  const mkTab = (id, label, flags) => {
+    const b = h("button", { class: "tab" + (state.active === id ? " active" : ""), onclick: () => { state.active = id; localStorage.setItem("cc.tab", id); renderAll(); } }, label);
+    if (flags > 0) b.append(h("span", { class: "flagn", title: flags + " store(s) consistently low" }, String(flags)));
+    tabsEl.append(b);
+  };
+  const totalFlags = state.brands.reduce((t, b) => t + buildMatrix(b).rows.filter(r => r.chronicLow).length, 0);
+  mkTab("overview", "Overview", totalFlags);
+  for (const b of state.brands) mkTab(b.sheet, b.name, buildMatrix(b).rows.filter(r => r.chronicLow).length);
+}
+
+function renderFilters() {
+  filtersEl.textContent = "";
+  filtersEl.append(
+    h("label", null, "Weeks",
+      h("select", { onchange: e => { state.window = +e.target.value; localStorage.setItem("cc.window", state.window); renderAll(); } },
+        [[8, "Last 8"], [12, "Last 12"], [26, "Last 26"], [0, "All"]].map(([v, t]) =>
+          h("option", { value: v, selected: state.window === v ? "" : null }, t)))),
+    h("label", null, "Sort",
+      h("select", { onchange: e => { state.sort = e.target.value; localStorage.setItem("cc.sort", state.sort); renderAll(); } },
+        [["store", "Store code"], ["lowfirst", "Lowest % first"], ["highfirst", "Highest % first"]].map(([v, t]) =>
+          h("option", { value: v, selected: state.sort === v ? "" : null }, t)))),
+    h("label", { title: "Cells at or above this are highlighted green" }, "High ≥",
+      h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.greenT,
+        onchange: e => { state.greenT = Math.min(100, Math.max(50, +e.target.value || 95)); localStorage.setItem("cc.greenT", state.greenT); renderAll(); } }), "%"),
+    h("label", { title: "Cells below this are highlighted red" }, "Low <",
+      h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.lowT,
+        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 92)); localStorage.setItem("cc.lowT", state.lowT); renderAll(); } }), "%"),
+    h("div", { class: "legend" },
+      legendKey("var(--wash-good)", "≥ " + state.greenT + "% high"),
+      legendKey("var(--page)", state.lowT + "–" + state.greenT + "%"),
+      legendKey("var(--wash-low)", "< " + state.lowT + "% low"),
+      h("span", { class: "key" }, h("span", { class: "swatch", style: "background:transparent" }, ""), "no count"),
+    )
+  );
+}
+function legendKey(bg, text) {
+  const sw = h("span", { class: "swatch" });
+  sw.style.background = bg;
+  return h("span", { class: "key" }, sw, text);
+}
+
+function deltaEl(d, opts) {
+  if (d == null) return h("span", { class: "delta flat" }, "—");
+  const eps = 0.0005;
+  const cls = d > eps ? "up" : d < -eps ? "down" : "flat";
+  const body = cls === "flat" ? "0.0 pt" : (d > 0 ? "▲ +" : "▼ −") + Math.abs(d * 100).toFixed(1) + " pt";
+  return h("span", { class: "delta " + cls }, body + (opts && opts.suffix ? opts.suffix : ""));
+}
+
+function kpiTile(label, valueText, extra, sub, onclick) {
+  const k = h("div", { class: "kpi" + (onclick ? " click" : ""), onclick },
+    h("div", { class: "lab" }, label),
+    h("div", { class: "val" }, valueText),
+    extra || null,
+    sub ? h("div", { class: "sub2" }, sub) : null);
+  return k;
+}
+
+function cellTooltip(ev, brand, week, e) {
+  showTooltip(ev.clientX, ev.clientY, el => {
+    el.append(h("div", { class: "tt-title" }, e.store + " — week of " + week.full));
+    if (e.pct != null) el.append(ttRow("Cycle count", fmtPct(e.pct) + "%"));
+    if (e.parts.length > 1) el.append(ttRow("Parts 1–" + e.parts.length, e.parts.map(p => fmtPct(p)).join(" / ")));
+    if (e.status) el.append(ttRow("Status", e.status));
+    if (e.countDate) el.append(ttRow("Counted", e.countDate));
+    if (e.missing) el.append(ttRow("Missing (check out)", e.missing));
+    if (e.updateLoc) el.append(ttRow("Update location", e.updateLoc));
+    if (e.checkIn) el.append(ttRow("Check in", e.checkIn));
+    if (e.remark) el.append(ttRow("Remark", e.remark));
+  });
+}
+
+function shortStatus(s) {
+  if (!s) return "—";
+  const t = s.toLowerCase();
+  if (t.includes("pend")) return "pending";
+  if (t.includes("not")) return "not done";
+  return t.length > 9 ? t.slice(0, 8) + "…" : t;
+}
+
+function renderBrand(brand) {
+  const { weeks, rows, avgs } = buildMatrix(brand);
+  const frag = document.createDocumentFragment();
+  const li = avgs.length - 1;
+  const latestAvg = avgs[li];
+  let prevAvg = null;
+  for (let i = li - 1; i >= 0; i--) if (avgs[i] != null) { prevAvg = avgs[i]; break; }
+  const latestWeek = weeks[li];
+  const countedN = rows.filter(r => r.entries[li] && r.entries[li].pct != null).length;
+  const flagged = rows.filter(r => r.chronicLow);
+  const strong = rows.filter(r => r.chronicHigh && !r.chronicLow);
+
+  frag.append(h("div", { class: "kpis" },
+    kpiTile("Latest week average (" + (latestWeek ? latestWeek.label : "—") + ")",
+      [latestAvg != null ? fmtPct(latestAvg) : "—", h("span", { class: "unit" }, "%")],
+      latestAvg != null && prevAvg != null ? deltaEl(latestAvg - prevAvg, { suffix: " vs prior wk" }) : null),
+    kpiTile("Stores counted", countedN + " / " + rows.length, null, "in latest week"),
+    kpiTile("Consistently low", String(flagged.length), null, "below " + state.lowT + "% in 3+ of last 4 counts"),
+    kpiTile("Consistently high", String(strong.length), null, "at/above " + state.greenT + "% in 3+ of last 4 counts"),
+  ));
+
+  const attn = h("section", { class: "card attention" },
+    h("h2", null, "⚠ Needs attention — consistently low"),
+    h("div", { class: "h2sub" }, "Below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
+  if (!flagged.length) attn.append(h("div", { class: "allok" }, "No stores are consistently low in the selected period. ✓"));
+  else for (const r of [...flagged].sort((a, b) => (a.latest ? a.latest.pct : 1) - (b.latest ? b.latest.pct : 1))) {
+    attn.append(h("div", { class: "attn-row" },
+      h("span", { class: "attn-store" }, r.store),
+      h("span", { class: "attn-chips" }, r.recent.map(c =>
+        h("span", { class: "attn-chip " + (c.pct < state.lowT / 100 ? "low" : "ok"), title: weeks[c.wi].full }, fmtPct(c.pct)))),
+      h("span", { class: "attn-note" },
+        (r.streak >= 2 ? r.streak + " weeks in a row below " + state.lowT + "%" : "low in " + r.recent.filter(c => c.pct < state.lowT / 100).length + " of last " + r.recent.length + " counts")
+        + (r.latest ? " · latest " + fmtPct(r.latest.pct) + "%" : ""))));
+  }
+  frag.append(attn);
+
+  if (strong.length) {
+    frag.append(h("section", { class: "card" },
+      h("h2", null, "Performing well"),
+      h("div", { class: "h2sub" }, "At or above " + state.greenT + "% in 3+ of the last 4 counted weeks"),
+      h("div", { class: "goodchips" }, strong.map(r =>
+        h("span", { class: "goodchip" }, r.store + " ", h("span", { class: "v" }, r.latest ? fmtPct(r.latest.pct) + "%" : ""))))));
+  }
+
+  const table = h("table", { class: "matrix" });
+  const headRow = h("tr", null, h("th", { class: "rowhead" }, "Store"));
+  weeks.forEach((w, wi) => headRow.append(h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label)));
+  headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
+  table.append(h("thead", null, headRow));
+  const tbody = h("tbody");
+  for (const r of rows) {
+    const tr = h("tr", { class: r.chronicLow ? "chronic" : null });
+    const th = h("th", { class: "rowhead" }, r.store);
+    if (r.chronicLow) th.append(h("span", { class: "flagico", title: "Consistently low" }, "⚠"));
+    else if (r.chronicHigh) th.append(h("span", { class: "starico", title: "Consistently high" }, "✓"));
+    tr.append(th);
+    r.entries.forEach((e, wi) => {
+      if (!e || (e.pct == null && !e.status && !e.countDate)) { tr.append(h("td", { class: "cell nodata" }, "–")); return; }
+      if (e.pct == null) {
+        const td = h("td", { class: "cell pending hasdata", tabindex: "0" }, shortStatus(e.status));
+        wireCell(td, brand, weeks[wi], e);
+        tr.append(td); return;
+      }
+      const td = h("td", { class: "cell hasdata " + classify(e.pct), tabindex: "0",
+        "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" }, fmtPct(e.pct));
+      wireCell(td, brand, weeks[wi], e);
+      tr.append(td);
+    });
+    tr.append(h("td", { class: "dcell" }, deltaEl(r.delta)));
+    tbody.append(tr);
+  }
+  const avgTr = h("tr", { class: "avgrow" }, h("th", { class: "rowhead" }, "Brand average"));
+  avgs.forEach(a => avgTr.append(h("td", null, a != null ? fmtPct(a) : "–")));
+  let avgDelta = null;
+  if (latestAvg != null && prevAvg != null) avgDelta = latestAvg - prevAvg;
+  avgTr.append(h("td", { class: "dcell" }, deltaEl(avgDelta)));
+  tbody.append(avgTr);
+  table.append(tbody);
+
+  frag.append(h("section", { class: "card" },
+    h("h2", null, "Weekly cycle count % by store"),
+    h("div", { class: "h2sub" }, "Hover a cell for count details (parts, status, missing / check-in, remarks)"),
+    h("div", { class: "matrix-scroll" }, table)));
+
+  frag.append(h("section", { class: "card" },
+    h("h2", null, brand.name + " — average trend"),
+    h("div", { class: "h2sub" }, "Brand average cycle count % per week (values in the table above)"),
+    lineChart({ weeks, series: [{ name: brand.name, values: avgs, colorVar: "--series-1" }] })));
+
+  return frag;
+}
+
+function wireCell(td, brand, week, e) {
+  td.addEventListener("pointermove", ev => cellTooltip(ev, brand, week, e));
+  td.addEventListener("pointerleave", hideTooltip);
+  td.addEventListener("focus", () => {
+    const r = td.getBoundingClientRect();
+    cellTooltip({ clientX: r.left + r.width / 2, clientY: r.bottom }, brand, week, e);
+  });
+  td.addEventListener("blur", hideTooltip);
+}
+
+function renderOverview() {
+  const frag = document.createDocumentFragment();
+  const per = state.brands.map(b => ({ brand: b, m: buildMatrix(b) }));
+
+  // union of week serials across brands
+  const serialSet = new Map();
+  for (const { m } of per) for (const w of m.weeks) serialSet.set(w.serial, w);
+  const weeks = [...serialSet.values()].sort((a, b) => a.serial - b.serial);
+  const idx = new Map(weeks.map((w, i) => [w.serial, i]));
+
+  const kpis = h("div", { class: "kpis" });
+  const seriesList = [];
+  per.forEach(({ brand, m }, bi) => {
+    const values = new Array(weeks.length).fill(null);
+    m.weeks.forEach((w, wi) => { values[idx.get(w.serial)] = m.avgs[wi]; });
+    seriesList.push({ name: brand.name, values, colorVar: SERIES_VARS[bi % SERIES_VARS.length] });
+    const counted = m.avgs.map((a, wi) => a != null ? { a, wi } : null).filter(Boolean);
+    const latest = counted[counted.length - 1] || null;
+    const prev = counted[counted.length - 2] || null;
+    const flags = m.rows.filter(r => r.chronicLow).length;
+    kpis.append(kpiTile(brand.name,
+      [latest ? fmtPct(latest.a) : "—", h("span", { class: "unit" }, "%")],
+      latest && prev ? deltaEl(latest.a - prev.a, { suffix: " vs prior wk" }) : null,
+      flags ? flags + " store(s) consistently low" : "no consistently-low stores",
+      () => { state.active = brand.sheet; localStorage.setItem("cc.tab", brand.sheet); renderAll(); }));
+  });
+  frag.append(kpis);
+
+  const legend = h("div", { class: "chart-legend" }, seriesList.map(s => {
+    const lk = h("span", { class: "linekey" });
+    lk.style.borderTopColor = getComputedStyle(document.documentElement).getPropertyValue(s.colorVar).trim();
+    return h("span", { class: "key" }, lk, s.name);
+  }));
+  const tbl = h("table", null,
+    h("tr", null, h("th", null, "Brand"), weeks.map(w => h("th", null, w.label))),
+    seriesList.map(s => h("tr", null, h("td", null, s.name), s.values.map(v => h("td", null, v != null ? fmtPct(v) : "–")))));
+  frag.append(h("section", { class: "card" },
+    h("h2", null, "Brand average by week"),
+    h("div", { class: "h2sub" }, "Average cycle count % across all counted stores in each brand"),
+    legend,
+    lineChart({ weeks, series: seriesList, height: 280, endLabels: true }),
+    h("details", { class: "tblview" }, h("summary", null, "Show data table"), tbl)));
+
+  const watch = [];
+  per.forEach(({ brand, m }) => {
+    for (const r of m.rows) if (r.chronicLow) watch.push({ brand, r, weeks: m.weeks });
+  });
+  watch.sort((a, b) => (a.r.latest ? a.r.latest.pct : 1) - (b.r.latest ? b.r.latest.pct : 1));
+  const card = h("section", { class: "card attention" },
+    h("h2", null, "⚠ Group watchlist — consistently low stores"),
+    h("div", { class: "h2sub" }, "Below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
+  if (!watch.length) card.append(h("div", { class: "allok" }, "No stores are consistently low across the Group. ✓"));
+  else for (const w of watch) {
+    card.append(h("div", { class: "attn-row" },
+      h("span", { class: "attn-store" }, w.r.store),
+      h("span", { class: "attn-brand" }, w.brand.name),
+      h("span", { class: "attn-chips" }, w.r.recent.map(c =>
+        h("span", { class: "attn-chip " + (c.pct < state.lowT / 100 ? "low" : "ok"), title: w.weeks[c.wi].full }, fmtPct(c.pct)))),
+      h("span", { class: "attn-note" },
+        (w.r.streak >= 2 ? w.r.streak + " wks in a row" : "low " + w.r.recent.filter(c => c.pct < state.lowT / 100).length + " of last " + w.r.recent.length)
+        + (w.r.latest ? " · latest " + fmtPct(w.r.latest.pct) + "%" : ""))));
+  }
+  frag.append(card);
+  return frag;
+}
+
+function renderAll() {
+  if (!state.brands.length) return;
+  renderTabs();
+  renderFilters();
+  hideTooltip();
+  contentEl.textContent = "";
+  const brand = state.brands.find(b => b.sheet === state.active);
+  contentEl.append(brand ? renderBrand(brand) : renderOverview());
+}
+
+/* ============================== REFRESH LOOP ============================== */
+const updatedEl = document.getElementById("updated");
+const bannerSlot = document.getElementById("bannerSlot");
+
+function setUpdated() {
+  updatedEl.textContent = "";
+  updatedEl.classList.toggle("err", !!state.error);
+  const dot = h("span", { class: "dot" });
+  if (state.fetchedAt) {
+    updatedEl.append(dot, "Updated " + state.fetchedAt.toLocaleTimeString() + " · auto-refresh 5 min");
+  } else if (state.error) {
+    updatedEl.append(dot, "No data yet");
+  }
+}
+
+async function refresh(first) {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  document.body.classList.add("refreshing");
+  bannerSlot.textContent = "";
+  try {
+    const brands = await loadData();
+    state.brands = brands;
+    state.fetchedAt = new Date();
+    state.error = null;
+    if (!brands.some(b => b.sheet === state.active) && state.active !== "overview") state.active = "overview";
+    renderAll();
+  } catch (e) {
+    state.error = e.message || String(e);
+    if (first || !state.brands.length) {
+      contentEl.textContent = "";
+      contentEl.append(h("div", { class: "fatal" }, "Couldn't load the dashboard. " + state.error));
+    } else {
+      bannerSlot.append(h("div", { class: "banner", role: "alert" },
+        "Refresh failed — showing data from " + (state.fetchedAt ? state.fetchedAt.toLocaleTimeString() : "earlier") + ". " + state.error,
+        h("button", { onclick: () => refresh(false) }, "Retry")));
+    }
+  } finally {
+    state.refreshing = false;
+    document.body.classList.remove("refreshing");
+    setUpdated();
+  }
+}
+
+document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
+document.getElementById("sheetLink").append(h("a", { href: SHEET_URL, target: "_blank", rel: "noopener" }, "Open Google Sheet ↗"));
+
+const themeBtn = document.getElementById("btnTheme");
+function applyTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  else document.documentElement.removeAttribute("data-theme");
+  themeBtn.textContent = t === "light" ? "☀" : t === "dark" ? "🌙" : "◐";
+  themeBtn.title = "Theme: " + (t || "auto");
+}
+applyTheme(localStorage.getItem("cc.theme") || "");
+themeBtn.addEventListener("click", () => {
+  const cur = localStorage.getItem("cc.theme") || "";
+  const next = cur === "" ? "light" : cur === "light" ? "dark" : "";
+  localStorage.setItem("cc.theme", next);
+  applyTheme(next);
+  renderAll(); // charts re-read CSS variables
+});
+
+setInterval(() => refresh(false), REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.fetchedAt && Date.now() - state.fetchedAt.getTime() > 60000) refresh(false);
+});
+
+if (typeof DecompressionStream === "undefined") {
+  contentEl.textContent = "";
+  contentEl.append(h("div", { class: "fatal" }, "This browser is too old for the dashboard — please open it in a recent version of Edge or Chrome."));
+} else {
+  refresh(true);
+}
+</script>
+</body>
+</html>
