@@ -262,13 +262,19 @@ const IGNORE_SHEET = /stock\s*take/i;
 const REFRESH_MS = 5 * 60 * 1000;          // auto-refresh every 5 minutes
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
 
+// v2 config: red is now "at or below 94%" (was "below 92%") — reset stored thresholds once
+if (localStorage.getItem("cc.cfgV") !== "2") {
+  localStorage.setItem("cc.cfgV", "2");
+  localStorage.removeItem("cc.greenT");
+  localStorage.removeItem("cc.lowT");
+}
 const state = {
   brands: [],            // [{sheet, name, weeks:[{serial,date,label,full,stores:[entry]}]}]
   active: localStorage.getItem("cc.tab") || "overview",
   window: +(localStorage.getItem("cc.window") || 12),   // 0 = all
   sort: localStorage.getItem("cc.sort") || "store",
   greenT: +(localStorage.getItem("cc.greenT") || 95),
-  lowT: +(localStorage.getItem("cc.lowT") || 92),
+  lowT: +(localStorage.getItem("cc.lowT") || 94),
   fetchedAt: null,
   error: null,
   refreshing: false,
@@ -290,6 +296,9 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 const fmtPct = v => (v * 100).toFixed(1);
+const EPS = 1e-9;
+const isLow = p => p <= state.lowT / 100 + EPS;    // red: at or below the low threshold
+const isHigh = p => p >= state.greenT / 100 - EPS; // green: at or above the high threshold
 function serialToDate(n) { return new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000); }
 function dLabel(d) { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }); }
 function dFull(d)  { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }); }
@@ -461,10 +470,10 @@ function buildMatrix(brand) {
   const rows = [...stores.entries()].map(([store, entries]) => {
     const counted = entries.map((e, wi) => e && e.pct != null ? { wi, pct: e.pct } : null).filter(Boolean);
     const recent = counted.slice(-4);
-    const lows  = recent.filter(c => c.pct < state.lowT / 100).length;
-    const highs = recent.filter(c => c.pct >= state.greenT / 100).length;
+    const lows  = recent.filter(c => isLow(c.pct)).length;
+    const highs = recent.filter(c => isHigh(c.pct)).length;
     let streak = 0;
-    for (let i = counted.length - 1; i >= 0 && counted[i].pct < state.lowT / 100; i--) streak++;
+    for (let i = counted.length - 1; i >= 0 && isLow(counted[i].pct); i--) streak++;
     const latest = counted[counted.length - 1] || null;
     const prev = counted[counted.length - 2] || null;
     return {
@@ -624,8 +633,8 @@ const filtersEl = document.getElementById("filters");
 
 function classify(pct) {
   if (pct == null) return null;
-  if (pct >= state.greenT / 100) return "good";
-  if (pct < state.lowT / 100) return "low";
+  if (isHigh(pct)) return "good";
+  if (isLow(pct)) return "low";
   return "mid";
 }
 
@@ -655,13 +664,13 @@ function renderFilters() {
     h("label", { title: "Cells at or above this are highlighted green" }, "High ≥",
       h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.greenT,
         onchange: e => { state.greenT = Math.min(100, Math.max(50, +e.target.value || 95)); localStorage.setItem("cc.greenT", state.greenT); renderAll(); } }), "%"),
-    h("label", { title: "Cells below this are highlighted red" }, "Low <",
+    h("label", { title: "Cells at or below this are highlighted red" }, "Low ≤",
       h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.lowT,
-        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 92)); localStorage.setItem("cc.lowT", state.lowT); renderAll(); } }), "%"),
+        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 94)); localStorage.setItem("cc.lowT", state.lowT); renderAll(); } }), "%"),
     h("div", { class: "legend" },
       legendKey("var(--wash-good)", "≥ " + state.greenT + "% high"),
       legendKey("var(--page)", state.lowT + "–" + state.greenT + "%"),
-      legendKey("var(--wash-low)", "< " + state.lowT + "% low"),
+      legendKey("var(--wash-low)", "≤ " + state.lowT + "% low"),
       h("span", { class: "key" }, h("span", { class: "swatch", style: "background:transparent" }, ""), "no count"),
     )
   );
@@ -728,21 +737,21 @@ function renderBrand(brand) {
       [latestAvg != null ? fmtPct(latestAvg) : "—", h("span", { class: "unit" }, "%")],
       latestAvg != null && prevAvg != null ? deltaEl(latestAvg - prevAvg, { suffix: " vs prior wk" }) : null),
     kpiTile("Stores counted", countedN + " / " + rows.length, null, "in latest week"),
-    kpiTile("Consistently low", String(flagged.length), null, "below " + state.lowT + "% in 3+ of last 4 counts"),
+    kpiTile("Consistently low", String(flagged.length), null, "at/below " + state.lowT + "% in 3+ of last 4 counts"),
     kpiTile("Consistently high", String(strong.length), null, "at/above " + state.greenT + "% in 3+ of last 4 counts"),
   ));
 
   const attn = h("section", { class: "card attention" },
     h("h2", null, "⚠ Needs attention — consistently low"),
-    h("div", { class: "h2sub" }, "Below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
+    h("div", { class: "h2sub" }, "At or below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
   if (!flagged.length) attn.append(h("div", { class: "allok" }, "No stores are consistently low in the selected period. ✓"));
   else for (const r of [...flagged].sort((a, b) => (a.latest ? a.latest.pct : 1) - (b.latest ? b.latest.pct : 1))) {
     attn.append(h("div", { class: "attn-row" },
       h("span", { class: "attn-store" }, r.store),
       h("span", { class: "attn-chips" }, r.recent.map(c =>
-        h("span", { class: "attn-chip " + (c.pct < state.lowT / 100 ? "low" : "ok"), title: weeks[c.wi].full }, fmtPct(c.pct)))),
+        h("span", { class: "attn-chip " + (isLow(c.pct) ? "low" : "ok"), title: weeks[c.wi].full }, fmtPct(c.pct)))),
       h("span", { class: "attn-note" },
-        (r.streak >= 2 ? r.streak + " weeks in a row below " + state.lowT + "%" : "low in " + r.recent.filter(c => c.pct < state.lowT / 100).length + " of last " + r.recent.length + " counts")
+        (r.streak >= 2 ? r.streak + " weeks in a row at/below " + state.lowT + "%" : "low in " + r.recent.filter(c => isLow(c.pct)).length + " of last " + r.recent.length + " counts")
         + (r.latest ? " · latest " + fmtPct(r.latest.pct) + "%" : ""))));
   }
   frag.append(attn);
@@ -863,16 +872,16 @@ function renderOverview() {
   watch.sort((a, b) => (a.r.latest ? a.r.latest.pct : 1) - (b.r.latest ? b.r.latest.pct : 1));
   const card = h("section", { class: "card attention" },
     h("h2", null, "⚠ Group watchlist — consistently low stores"),
-    h("div", { class: "h2sub" }, "Below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
+    h("div", { class: "h2sub" }, "At or below " + state.lowT + "% in at least 3 of the last 4 counted weeks"));
   if (!watch.length) card.append(h("div", { class: "allok" }, "No stores are consistently low across the Group. ✓"));
   else for (const w of watch) {
     card.append(h("div", { class: "attn-row" },
       h("span", { class: "attn-store" }, w.r.store),
       h("span", { class: "attn-brand" }, w.brand.name),
       h("span", { class: "attn-chips" }, w.r.recent.map(c =>
-        h("span", { class: "attn-chip " + (c.pct < state.lowT / 100 ? "low" : "ok"), title: w.weeks[c.wi].full }, fmtPct(c.pct)))),
+        h("span", { class: "attn-chip " + (isLow(c.pct) ? "low" : "ok"), title: w.weeks[c.wi].full }, fmtPct(c.pct)))),
       h("span", { class: "attn-note" },
-        (w.r.streak >= 2 ? w.r.streak + " wks in a row" : "low " + w.r.recent.filter(c => c.pct < state.lowT / 100).length + " of last " + w.r.recent.length)
+        (w.r.streak >= 2 ? w.r.streak + " wks in a row" : "low " + w.r.recent.filter(c => isLow(c.pct)).length + " of last " + w.r.recent.length)
         + (w.r.latest ? " · latest " + fmtPct(w.r.latest.pct) + "%" : ""))));
   }
   frag.append(card);
