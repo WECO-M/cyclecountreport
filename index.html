@@ -87,13 +87,12 @@
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     padding: 14px 22px 10px;
   }
-  .topbar h1 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: .1px; }
   .topbar .sub { color: var(--muted); font-size: 12.5px; }
   .topbar .spacer { flex: 1; }
   .updated { color: var(--ink-2); font-size: 12.5px; }
   .updated .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background: var(--status-good); margin-right:6px; vertical-align: 1px;}
   .updated.err .dot { background: var(--status-critical); }
-  button, select, input[type=number] {
+  button, select, input[type=number], input[type=text], input[type=email], input[type=password] {
     font: inherit; color: var(--ink);
     background: var(--surface-1);
     border: 1px solid var(--border);
@@ -102,8 +101,31 @@
   button { cursor: pointer; }
   button:hover { border-color: var(--baseline); }
   button.primary { font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
   a { color: var(--series-1); text-decoration: none; }
   a:hover { text-decoration: underline; }
+
+  /* Country title dropdown */
+  .titlebox { position: relative; }
+  .titlebtn {
+    border: none; background: none; padding: 2px 6px 2px 0;
+    font-size: 17px; font-weight: 650; letter-spacing: .1px; color: var(--ink);
+    display: flex; align-items: center; gap: 7px;
+  }
+  .titlebtn .caret { font-size: 11px; color: var(--muted); }
+  .titlebtn:hover .caret { color: var(--ink); }
+  .titlemenu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 230px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.16); padding: 5px; display: none;
+  }
+  .titlemenu.open { display: block; }
+  .titlemenu button {
+    display: flex; width: 100%; border: none; background: none; text-align: left;
+    padding: 8px 11px; border-radius: 7px; font-weight: 550; gap: 8px; align-items: center;
+  }
+  .titlemenu button:hover { background: var(--page); }
+  .titlemenu .chk { width: 15px; font-weight: 700; }
 
   .tabs { display: flex; gap: 4px; padding: 4px 22px 0; flex-wrap: wrap; border-bottom: 1px solid var(--grid); }
   .tab {
@@ -234,33 +256,81 @@
   #tooltip .tt-row .k { color: var(--ink-2); }
   #tooltip .tt-row .v { font-weight: 650; margin-left: auto; font-variant-numeric: tabular-nums; }
   #tooltip .lk { display:inline-block; width: 12px; border-top: 2.5px solid; border-radius: 2px; vertical-align: 3px; margin-right: 2px; }
+
+  /* ---------- Auth screens ---------- */
+  .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .auth-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px 26px 24px; width: 360px; max-width: 100%;
+  }
+  .auth-card h1 { font-size: 18px; margin: 0 0 2px; }
+  .auth-card .asub { color: var(--muted); font-size: 12.5px; margin-bottom: 18px; }
+  .auth-card label { display: block; font-size: 12.5px; color: var(--ink-2); margin: 12px 0 4px; }
+  .auth-card input { width: 100%; padding: 8px 11px; }
+  .auth-card .abtn { width: 100%; margin-top: 18px; padding: 9px; font-weight: 650; border-radius: 8px;
+    background: var(--ink); color: var(--page); border: none; }
+  .auth-card .abtn:hover { opacity: .88; }
+  .auth-err { color: var(--status-critical); font-size: 12.5px; margin-top: 12px; min-height: 16px; }
+  .auth-ok  { color: var(--delta-up); font-size: 12.5px; margin-top: 12px; }
+  .auth-links { display: flex; justify-content: space-between; margin-top: 14px; font-size: 12.5px; }
+  .auth-note { color: var(--muted); font-size: 12px; margin-top: 16px; line-height: 1.5; }
+
+  /* ---------- Settings ---------- */
+  .settings-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 6px; }
+  .settings-head h2 { font-size: 16px; margin: 0; }
+  .roletbl { width: 100%; border-collapse: collapse; }
+  .roletbl th, .roletbl td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--grid); font-size: 13px; }
+  .roletbl thead th { border-top: none; color: var(--muted); font-weight: 550; font-size: 12px; }
+  .roletbl select { padding: 4px 8px; }
+  .roletbl .cty { display: inline-flex; gap: 10px; }
+  .roletbl .cty label { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+  .rolebadge { font-size: 11.5px; padding: 2px 8px; border-radius: 9px; font-weight: 600; }
+  .rolebadge.admin { background: var(--chip-good); }
+  .rolebadge.pending { background: var(--chip-low); }
+  .rolebadge.executive { background: var(--page); border: 1px solid var(--grid); }
+  .profgrid { max-width: 460px; }
+  .profgrid label { display: block; font-size: 12.5px; color: var(--ink-2); margin: 12px 0 4px; }
+  .profgrid input { width: 100%; padding: 8px 11px; }
+  .profgrid input[disabled] { color: var(--muted); }
 </style>
 </head>
 <body>
-<header class="topbar">
-  <h1>cyclecountreport_sg</h1>
-  <span class="sub" id="sheetLink"></span>
-  <span class="spacer"></span>
-  <span class="updated" id="updated"></span>
-  <button id="btnRefresh" class="primary" title="Fetch latest data from the Google Sheet">↻ Refresh</button>
-  <button id="btnTheme" title="Theme">◐</button>
-</header>
-<div id="bannerSlot"></div>
-<nav class="tabs" id="tabs"></nav>
-<div class="filters" id="filters"></div>
-<main id="content"><div class="loading">Loading cycle count data from Google Sheets…</div></main>
+<div id="authRoot"></div>
+<div id="appRoot" style="display:none">
+  <header class="topbar">
+    <div class="titlebox" id="titleBox"></div>
+    <span class="sub" id="sheetLink"></span>
+    <span class="spacer"></span>
+    <span class="updated" id="updated"></span>
+    <button id="btnRefresh" class="primary" title="Fetch latest data from the Google Sheet">↻ Refresh</button>
+    <button id="btnTheme" title="Theme">◐</button>
+    <button id="btnSettings" title="Settings" style="display:none">⚙</button>
+    <button id="btnSignOut" style="display:none">Sign out</button>
+  </header>
+  <div id="bannerSlot"></div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="filters" id="filters"></div>
+  <main id="content"><div class="loading">Loading cycle count data from Google Sheets…</div></main>
+</div>
 <div id="tooltip" role="status"></div>
 
 <script>
 "use strict";
 
 /* ============================== CONFIG ============================== */
-const SHEET_ID = "1FrKrNzITjp_daSbNSaV43vUhzAQeVmiyK7AbtiXidDs";
-const SHEET_URL = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/edit";
+const COUNTRIES = [
+  { id: "SG", title: "Cycle Count Report SG", sheetId: "1FrKrNzITjp_daSbNSaV43vUhzAQeVmiyK7AbtiXidDs" },
+  { id: "MY", title: "Cycle Count Report MY", sheetId: "1CyEcgxmWKobXs17X-1Vlc-z3H8Vw80QnQm3H7Bs0oy8" },
+];
 const BRAND_NAMES = { "iORA": "iORA", "SANS": "SANS & SANS", "TRT": "TRT", "MONOLOQ": "MONOLOQ" };
 const IGNORE_SHEET = /stock\s*take/i;
 const REFRESH_MS = 5 * 60 * 1000;          // auto-refresh every 5 minutes
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
+
+// ---- Sign-in (Firebase). Leave null to run the dashboard with sign-in disabled. ----
+// The first account registered with ADMIN_EMAIL becomes the Administrator.
+const FIREBASE_CONFIG = null; // e.g. { apiKey:"…", authDomain:"…", projectId:"…", appId:"…" }
+const ADMIN_EMAIL = "ng_thianwei@iora.com.my";
 
 // v2 config: red is now "at or below 94%" (was "below 92%") — reset stored thresholds once
 if (localStorage.getItem("cc.cfgV") !== "2") {
@@ -269,15 +339,17 @@ if (localStorage.getItem("cc.cfgV") !== "2") {
   localStorage.removeItem("cc.lowT");
 }
 const state = {
-  brands: [],            // [{sheet, name, weeks:[{serial,date,label,full,stores:[entry]}]}]
+  data: {},              // countryId -> { brands, fetchedAt }
+  country: localStorage.getItem("cc.country") || "SG",
+  view: "dash",          // dash | settings
   active: localStorage.getItem("cc.tab") || "overview",
   window: +(localStorage.getItem("cc.window") || 12),   // 0 = all
   sort: localStorage.getItem("cc.sort") || "store",
   greenT: +(localStorage.getItem("cc.greenT") || 95),
   lowT: +(localStorage.getItem("cc.lowT") || 94),
-  fetchedAt: null,
   error: null,
   refreshing: false,
+  user: null,            // {uid, email, name, role, countries} when sign-in is enabled
 };
 
 /* ============================== UTILS ============================== */
@@ -302,6 +374,18 @@ const isHigh = p => p >= state.greenT / 100 - EPS; // green: at or above the hig
 function serialToDate(n) { return new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000); }
 function dLabel(d) { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }); }
 function dFull(d)  { return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }); }
+function loadScript(src) {
+  return new Promise((ok, bad) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = () => bad(new Error("Failed to load " + src));
+    document.head.append(s);
+  });
+}
+function country() { return COUNTRIES.find(c => c.id === state.country) || COUNTRIES[0]; }
+function allowedCountries() {
+  if (!FIREBASE_CONFIG || !state.user || state.user.role === "admin") return COUNTRIES;
+  return COUNTRIES.filter(c => (state.user.countries || []).includes(c.id));
+}
 
 /* ============================== XLSX FETCH + PARSE ============================== */
 async function unzip(buf) {
@@ -419,11 +503,11 @@ function parseBrandRows(rows) {
   return withPct;
 }
 
-async function loadData() {
-  const url = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/export?format=xlsx&_cb=" + Date.now();
+async function loadData(sheetId) {
+  const url = "https://docs.google.com/spreadsheets/d/" + sheetId + "/export?format=xlsx&_cb=" + Date.now();
   let res;
   try { res = await fetch(url, { cache: "no-store" }); }
-  catch (e) { throw new Error("Could not reach Google Sheets. Check your internet connection, and make sure this page is opened via the Start Dashboard launcher (not double-clicked as a file)."); }
+  catch (e) { throw new Error("Could not reach Google Sheets. Check your internet connection."); }
   if (!res.ok) throw new Error("Google Sheets returned HTTP " + res.status + ". Check that the sheet is shared as 'Anyone with the link — Viewer'.");
   const file = await unzip(await res.arrayBuffer());
 
@@ -453,6 +537,10 @@ async function loadData() {
 }
 
 /* ============================== DERIVED DATA ============================== */
+function activeBrands() {
+  const d = state.data[state.country];
+  return d ? d.brands : [];
+}
 function windowWeeks(brand) {
   const w = brand.weeks;
   return state.window > 0 ? w.slice(-state.window) : w.slice();
@@ -626,7 +714,7 @@ function lineChart({ series, weeks, height = 250, endLabels = false }) {
   return wrap;
 }
 
-/* ============================== RENDER ============================== */
+/* ============================== RENDER: DASHBOARD ============================== */
 const contentEl = document.getElementById("content");
 const tabsEl = document.getElementById("tabs");
 const filtersEl = document.getElementById("filters");
@@ -638,35 +726,70 @@ function classify(pct) {
   return "mid";
 }
 
+function renderTitle() {
+  const box = document.getElementById("titleBox");
+  box.textContent = "";
+  const cur = country();
+  document.title = "cyclecountreport_" + cur.id.toLowerCase();
+  const sheetA = document.getElementById("sheetA");
+  if (sheetA) sheetA.href = "https://docs.google.com/spreadsheets/d/" + cur.sheetId + "/edit";
+  const menu = h("div", { class: "titlemenu" });
+  const allowed = allowedCountries();
+  for (const c of allowed) {
+    menu.append(h("button", {
+      onclick: () => {
+        menu.classList.remove("open");
+        if (c.id === state.country) return;
+        state.country = c.id;
+        localStorage.setItem("cc.country", c.id);
+        state.view = "dash";
+        renderApp();
+        ensureCountryData();
+      }
+    }, h("span", { class: "chk" }, c.id === cur.id ? "✓" : ""), c.title));
+  }
+  const btn = h("button", { class: "titlebtn", title: "Switch country report",
+    onclick: ev => { ev.stopPropagation(); menu.classList.toggle("open"); } },
+    cur.title, allowed.length > 1 ? h("span", { class: "caret" }, "▼") : null);
+  box.append(btn, menu);
+}
+document.addEventListener("click", () => {
+  const m = document.querySelector(".titlemenu.open");
+  if (m) m.classList.remove("open");
+});
+
 function renderTabs() {
   tabsEl.textContent = "";
+  if (state.view !== "dash") return;
+  const brands = activeBrands();
   const mkTab = (id, label, flags) => {
-    const b = h("button", { class: "tab" + (state.active === id ? " active" : ""), onclick: () => { state.active = id; localStorage.setItem("cc.tab", id); renderAll(); } }, label);
+    const b = h("button", { class: "tab" + (state.active === id ? " active" : ""), onclick: () => { state.active = id; localStorage.setItem("cc.tab", id); renderApp(); } }, label);
     if (flags > 0) b.append(h("span", { class: "flagn", title: flags + " store(s) consistently low" }, String(flags)));
     tabsEl.append(b);
   };
-  const totalFlags = state.brands.reduce((t, b) => t + buildMatrix(b).rows.filter(r => r.chronicLow).length, 0);
+  const totalFlags = brands.reduce((t, b) => t + buildMatrix(b).rows.filter(r => r.chronicLow).length, 0);
   mkTab("overview", "Overview", totalFlags);
-  for (const b of state.brands) mkTab(b.sheet, b.name, buildMatrix(b).rows.filter(r => r.chronicLow).length);
+  for (const b of brands) mkTab(b.sheet, b.name, buildMatrix(b).rows.filter(r => r.chronicLow).length);
 }
 
 function renderFilters() {
   filtersEl.textContent = "";
+  if (state.view !== "dash") return;
   filtersEl.append(
     h("label", null, "Weeks",
-      h("select", { onchange: e => { state.window = +e.target.value; localStorage.setItem("cc.window", state.window); renderAll(); } },
+      h("select", { onchange: e => { state.window = +e.target.value; localStorage.setItem("cc.window", state.window); renderApp(); } },
         [[8, "Last 8"], [12, "Last 12"], [26, "Last 26"], [0, "All"]].map(([v, t]) =>
           h("option", { value: v, selected: state.window === v ? "" : null }, t)))),
     h("label", null, "Sort",
-      h("select", { onchange: e => { state.sort = e.target.value; localStorage.setItem("cc.sort", state.sort); renderAll(); } },
+      h("select", { onchange: e => { state.sort = e.target.value; localStorage.setItem("cc.sort", state.sort); renderApp(); } },
         [["store", "Store code"], ["lowfirst", "Lowest % first"], ["highfirst", "Highest % first"]].map(([v, t]) =>
           h("option", { value: v, selected: state.sort === v ? "" : null }, t)))),
     h("label", { title: "Cells at or above this are highlighted green" }, "High ≥",
       h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.greenT,
-        onchange: e => { state.greenT = Math.min(100, Math.max(50, +e.target.value || 95)); localStorage.setItem("cc.greenT", state.greenT); renderAll(); } }), "%"),
+        onchange: e => { state.greenT = Math.min(100, Math.max(50, +e.target.value || 95)); localStorage.setItem("cc.greenT", state.greenT); renderApp(); } }), "%"),
     h("label", { title: "Cells at or below this are highlighted red" }, "Low ≤",
       h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.lowT,
-        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 94)); localStorage.setItem("cc.lowT", state.lowT); renderAll(); } }), "%"),
+        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 94)); localStorage.setItem("cc.lowT", state.lowT); renderApp(); } }), "%"),
     h("div", { class: "legend" },
       legendKey("var(--wash-good)", "≥ " + state.greenT + "% high"),
       legendKey("var(--page)", state.lowT + "–" + state.greenT + "%"),
@@ -690,12 +813,11 @@ function deltaEl(d, opts) {
 }
 
 function kpiTile(label, valueText, extra, sub, onclick) {
-  const k = h("div", { class: "kpi" + (onclick ? " click" : ""), onclick },
+  return h("div", { class: "kpi" + (onclick ? " click" : ""), onclick },
     h("div", { class: "lab" }, label),
     h("div", { class: "val" }, valueText),
     extra || null,
     sub ? h("div", { class: "sub2" }, sub) : null);
-  return k;
 }
 
 function cellTooltip(ev, brand, week, e) {
@@ -824,9 +946,8 @@ function wireCell(td, brand, week, e) {
 
 function renderOverview() {
   const frag = document.createDocumentFragment();
-  const per = state.brands.map(b => ({ brand: b, m: buildMatrix(b) }));
+  const per = activeBrands().map(b => ({ brand: b, m: buildMatrix(b) }));
 
-  // union of week serials across brands
   const serialSet = new Map();
   for (const { m } of per) for (const w of m.weeks) serialSet.set(w.serial, w);
   const weeks = [...serialSet.values()].sort((a, b) => a.serial - b.serial);
@@ -846,7 +967,7 @@ function renderOverview() {
       [latest ? fmtPct(latest.a) : "—", h("span", { class: "unit" }, "%")],
       latest && prev ? deltaEl(latest.a - prev.a, { suffix: " vs prior wk" }) : null,
       flags ? flags + " store(s) consistently low" : "no consistently-low stores",
-      () => { state.active = brand.sheet; localStorage.setItem("cc.tab", brand.sheet); renderAll(); }));
+      () => { state.active = brand.sheet; localStorage.setItem("cc.tab", brand.sheet); renderApp(); }));
   });
   frag.append(kpis);
 
@@ -888,26 +1009,134 @@ function renderOverview() {
   return frag;
 }
 
-function renderAll() {
-  if (!state.brands.length) return;
+/* ============================== RENDER: SETTINGS ============================== */
+function renderSettings() {
+  const frag = document.createDocumentFragment();
+  frag.append(h("div", { class: "settings-head" },
+    h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
+    h("h2", null, "Settings")));
+
+  // ---- Profile ----
+  const u = state.user;
+  const nameInput = h("input", { type: "text", value: u.name || "" });
+  const profMsg = h("div", { class: "auth-ok" }, "");
+  frag.append(h("section", { class: "card" },
+    h("h2", null, "Profile"),
+    h("div", { class: "h2sub" }, "Your account details"),
+    h("div", { class: "profgrid" },
+      h("label", null, "Name"), nameInput,
+      h("label", null, "Email"), h("input", { type: "email", value: u.email, disabled: "" }),
+      h("label", null, "Role"), h("input", { type: "text", value: u.role === "admin" ? "Administrator" : u.role === "executive" ? "Executive" : "Pending approval", disabled: "" }),
+      h("div", { style: "margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;" },
+        h("button", { class: "primary", onclick: async ev => {
+          const btn = ev.target; btn.disabled = true;
+          try {
+            await db.collection("users").doc(u.uid).update({ name: nameInput.value.trim() });
+            state.user.name = nameInput.value.trim();
+            profMsg.textContent = "Saved.";
+          } catch (e) { profMsg.textContent = "Could not save: " + e.message; profMsg.className = "auth-err"; }
+          btn.disabled = false;
+        } }, "Save profile"),
+        h("button", { onclick: async ev => {
+          const btn = ev.target; btn.disabled = true;
+          try { await auth.sendPasswordResetEmail(u.email); profMsg.textContent = "Password reset email sent to " + u.email + "."; }
+          catch (e) { profMsg.textContent = "Could not send: " + e.message; profMsg.className = "auth-err"; }
+          btn.disabled = false;
+        } }, "Change password (email link)")),
+      profMsg)));
+
+  // ---- Roles (admin only) ----
+  if (u.role === "admin") {
+    const card = h("section", { class: "card" },
+      h("h2", null, "Roles & access"),
+      h("div", { class: "h2sub" }, "Only Administrators can change roles. New sign-ups appear here as 'Pending' until you grant access."));
+    const holder = h("div", null, h("div", { class: "loading" }, "Loading users…"));
+    card.append(holder);
+    frag.append(card);
+    db.collection("users").get().then(snap => {
+      holder.textContent = "";
+      const tbl = h("table", { class: "roletbl" },
+        h("thead", null, h("tr", null,
+          h("th", null, "Name"), h("th", null, "Email"), h("th", null, "Role"),
+          h("th", null, "Country access"), h("th", null, ""))));
+      const tb = h("tbody");
+      const docs = snap.docs.sort((a, b) => (a.data().email || "").localeCompare(b.data().email || ""));
+      for (const d of docs) {
+        const row = d.data(); const uid = d.id;
+        const roleSel = h("select", null,
+          [["admin", "Administrator"], ["executive", "Executive"], ["pending", "Pending (no access)"]].map(([v, t]) =>
+            h("option", { value: v, selected: (row.role || "pending") === v ? "" : null }, t)));
+        const boxes = COUNTRIES.map(c => {
+          const cb = h("input", { type: "checkbox" });
+          cb.checked = (row.countries || []).includes(c.id);
+          return { id: c.id, cb, el: h("label", null, cb, c.id) };
+        });
+        const msg = h("span", { class: "auth-ok" }, "");
+        const save = h("button", { class: "primary", onclick: async ev => {
+          const btn = ev.target; btn.disabled = true; msg.textContent = "";
+          try {
+            await db.collection("users").doc(uid).update({
+              role: roleSel.value,
+              countries: boxes.filter(b => b.cb.checked).map(b => b.id),
+            });
+            msg.textContent = "Saved ✓";
+            if (uid === state.user.uid) { state.user.role = roleSel.value; renderApp(); }
+          } catch (e) { msg.textContent = "Failed: " + e.message; msg.className = "auth-err"; }
+          btn.disabled = false;
+        } }, "Save");
+        tb.append(h("tr", null,
+          h("td", null, row.name || "—", uid === state.user.uid ? " (you)" : ""),
+          h("td", null, row.email || uid),
+          h("td", null, roleSel),
+          h("td", null, h("span", { class: "cty" }, boxes.map(b => b.el))),
+          h("td", null, save, " ", msg)));
+      }
+      tbl.append(tb);
+      holder.append(h("div", { class: "matrix-scroll" }, tbl));
+    }).catch(e => {
+      holder.textContent = "";
+      holder.append(h("div", { class: "fatal" }, "Could not load users: " + e.message));
+    });
+  }
+  return frag;
+}
+
+/* ============================== APP RENDER + REFRESH ============================== */
+const updatedEl = document.getElementById("updated");
+const bannerSlot = document.getElementById("bannerSlot");
+
+function renderApp() {
+  renderTitle();
   renderTabs();
   renderFilters();
   hideTooltip();
   contentEl.textContent = "";
-  const brand = state.brands.find(b => b.sheet === state.active);
+  if (state.view === "settings" && state.user) { contentEl.append(renderSettings()); return; }
+  state.view = "dash";
+  const allowed = allowedCountries();
+  if (!allowed.length) {
+    contentEl.append(h("div", { class: "fatal" }, "Your account has no country access yet — ask an Administrator to grant it in Settings → Roles."));
+    return;
+  }
+  if (!allowed.some(c => c.id === state.country)) {
+    state.country = allowed[0].id;
+    localStorage.setItem("cc.country", state.country);
+    renderTitle();
+  }
+  const brands = activeBrands();
+  if (!brands.length) { contentEl.append(h("div", { class: "loading" }, "Loading cycle count data from Google Sheets…")); return; }
+  if (!brands.some(b => b.sheet === state.active) && state.active !== "overview") state.active = "overview";
+  const brand = brands.find(b => b.sheet === state.active);
   contentEl.append(brand ? renderBrand(brand) : renderOverview());
 }
-
-/* ============================== REFRESH LOOP ============================== */
-const updatedEl = document.getElementById("updated");
-const bannerSlot = document.getElementById("bannerSlot");
 
 function setUpdated() {
   updatedEl.textContent = "";
   updatedEl.classList.toggle("err", !!state.error);
+  const d = state.data[state.country];
   const dot = h("span", { class: "dot" });
-  if (state.fetchedAt) {
-    updatedEl.append(dot, "Updated " + state.fetchedAt.toLocaleTimeString() + " · auto-refresh 5 min");
+  if (d && d.fetchedAt) {
+    updatedEl.append(dot, "Updated " + d.fetchedAt.toLocaleTimeString() + " · auto-refresh 5 min");
   } else if (state.error) {
     updatedEl.append(dot, "No data yet");
   }
@@ -918,21 +1147,21 @@ async function refresh(first) {
   state.refreshing = true;
   document.body.classList.add("refreshing");
   bannerSlot.textContent = "";
+  const cid = state.country;
   try {
-    const brands = await loadData();
-    state.brands = brands;
-    state.fetchedAt = new Date();
+    const brands = await loadData(country().sheetId);
+    state.data[cid] = { brands, fetchedAt: new Date() };
     state.error = null;
-    if (!brands.some(b => b.sheet === state.active) && state.active !== "overview") state.active = "overview";
-    renderAll();
+    renderApp();
   } catch (e) {
     state.error = e.message || String(e);
-    if (first || !state.brands.length) {
+    const had = state.data[cid];
+    if (first || !had) {
       contentEl.textContent = "";
       contentEl.append(h("div", { class: "fatal" }, "Couldn't load the dashboard. " + state.error));
     } else {
       bannerSlot.append(h("div", { class: "banner", role: "alert" },
-        "Refresh failed — showing data from " + (state.fetchedAt ? state.fetchedAt.toLocaleTimeString() : "earlier") + ". " + state.error,
+        "Refresh failed — showing data from " + had.fetchedAt.toLocaleTimeString() + ". " + state.error,
         h("button", { onclick: () => refresh(false) }, "Retry")));
     }
   } finally {
@@ -941,9 +1170,14 @@ async function refresh(first) {
     setUpdated();
   }
 }
+function ensureCountryData() {
+  const d = state.data[state.country];
+  setUpdated();
+  if (!d || Date.now() - d.fetchedAt.getTime() > REFRESH_MS) refresh(!d);
+}
 
 document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
-document.getElementById("sheetLink").append(h("a", { href: SHEET_URL, target: "_blank", rel: "noopener" }, "Open Google Sheet ↗"));
+document.getElementById("sheetLink").append(h("a", { href: "#", id: "sheetA", target: "_blank", rel: "noopener" }, "Open Google Sheet ↗"));
 
 const themeBtn = document.getElementById("btnTheme");
 function applyTheme(t) {
@@ -958,19 +1192,187 @@ themeBtn.addEventListener("click", () => {
   const next = cur === "" ? "light" : cur === "light" ? "dark" : "";
   localStorage.setItem("cc.theme", next);
   applyTheme(next);
-  renderAll(); // charts re-read CSS variables
+  if (document.getElementById("appRoot").style.display !== "none") renderApp();
 });
 
-setInterval(() => refresh(false), REFRESH_MS);
+setInterval(() => {
+  if (document.getElementById("appRoot").style.display !== "none") refresh(false);
+}, REFRESH_MS);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.fetchedAt && Date.now() - state.fetchedAt.getTime() > 60000) refresh(false);
+  if (document.hidden || document.getElementById("appRoot").style.display === "none") return;
+  const d = state.data[state.country];
+  if (d && Date.now() - d.fetchedAt.getTime() > 60000) refresh(false);
 });
 
+/* ============================== AUTH ============================== */
+let auth = null, db = null;
+const authRoot = document.getElementById("authRoot");
+
+function startApp() {
+  authRoot.style.display = "none";
+  authRoot.textContent = "";
+  document.getElementById("appRoot").style.display = "";
+  document.getElementById("btnSettings").style.display = state.user ? "" : "none";
+  document.getElementById("btnSignOut").style.display = state.user ? "" : "none";
+  renderApp();
+  ensureCountryData();
+}
+document.getElementById("btnSettings").addEventListener("click", () => {
+  state.view = state.view === "settings" ? "dash" : "settings";
+  renderApp();
+});
+document.getElementById("btnSignOut").addEventListener("click", async () => {
+  if (auth) await auth.signOut();
+});
+
+function authCard(...kids) {
+  authRoot.style.display = "";
+  document.getElementById("appRoot").style.display = "none";
+  authRoot.textContent = "";
+  authRoot.append(h("div", { class: "auth-wrap" }, h("div", { class: "auth-card" }, ...kids)));
+}
+function friendlyAuthError(e) {
+  const c = e && e.code || "";
+  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "Wrong email or password.";
+  if (c.includes("invalid-email")) return "That email address doesn't look right.";
+  if (c.includes("email-already-in-use")) return "An account with this email already exists — sign in instead.";
+  if (c.includes("weak-password")) return "Password too weak — use at least 6 characters.";
+  if (c.includes("too-many-requests")) return "Too many attempts — wait a few minutes and try again.";
+  if (c.includes("network")) return "Network problem — check your connection.";
+  return (e && e.message) || String(e);
+}
+
+function showLogin(mode) {   // mode: 'signin' | 'signup' | 'reset'
+  mode = mode || "signin";
+  const email = h("input", { type: "email", autocomplete: "username", placeholder: "you@iora.com" });
+  const pass = h("input", { type: "password", autocomplete: mode === "signup" ? "new-password" : "current-password", placeholder: "••••••••" });
+  const name = h("input", { type: "text", autocomplete: "name", placeholder: "Your name" });
+  const err = h("div", { class: "auth-err" }, "");
+  const doSubmit = async () => {
+    err.textContent = "";
+    try {
+      if (mode === "signin") {
+        await auth.signInWithEmailAndPassword(email.value.trim(), pass.value);
+      } else if (mode === "signup") {
+        if (!name.value.trim()) { err.textContent = "Please enter your name."; return; }
+        const cred = await auth.createUserWithEmailAndPassword(email.value.trim(), pass.value);
+        try { await cred.user.updateProfile({ displayName: name.value.trim() }); } catch (_) {}
+        sessionStorage.setItem("cc.signupName", name.value.trim());
+        await cred.user.sendEmailVerification();
+        // onAuthStateChanged routes to the verify screen
+      } else {
+        await auth.sendPasswordResetEmail(email.value.trim());
+        err.className = "auth-ok";
+        err.textContent = "Reset link sent — check your inbox.";
+      }
+    } catch (e) { err.className = "auth-err"; err.textContent = friendlyAuthError(e); }
+  };
+  const onEnter = e => { if (e.key === "Enter") doSubmit(); };
+  email.addEventListener("keydown", onEnter); pass.addEventListener("keydown", onEnter);
+  authCard(
+    h("h1", null, "Cycle Count Report"),
+    h("div", { class: "asub" }, mode === "signin" ? "Sign in to continue" : mode === "signup" ? "Create your account" : "Reset your password"),
+    mode === "signup" ? h("label", null, "Name") : null,
+    mode === "signup" ? name : null,
+    h("label", null, "Email"), email,
+    mode !== "reset" ? h("label", null, "Password") : null,
+    mode !== "reset" ? pass : null,
+    h("button", { class: "abtn", onclick: doSubmit }, mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"),
+    err,
+    h("div", { class: "auth-links" },
+      mode === "signin" ? h("a", { href: "#", onclick: e => { e.preventDefault(); showLogin("signup"); } }, "Create account")
+                        : h("a", { href: "#", onclick: e => { e.preventDefault(); showLogin("signin"); } }, "Back to sign in"),
+      mode === "signin" ? h("a", { href: "#", onclick: e => { e.preventDefault(); showLogin("reset"); } }, "Forgot password?") : null),
+    mode === "signup" ? h("div", { class: "auth-note" }, "You'll receive a verification email. After verifying, an Administrator must approve your account before you can see the reports.") : null,
+  );
+}
+
+function showVerify(user) {
+  const msg = h("div", { class: "auth-ok" }, "");
+  authCard(
+    h("h1", null, "Verify your email"),
+    h("div", { class: "asub" }, "We sent a verification link to " + user.email),
+    h("div", { class: "auth-note" }, "Open the email and click the link, then come back here."),
+    h("button", { class: "abtn", onclick: async () => {
+      await user.reload();
+      if (auth.currentUser && auth.currentUser.emailVerified) route(auth.currentUser);
+      else { msg.className = "auth-err"; msg.textContent = "Not verified yet — check your inbox (and spam folder)."; }
+    } }, "I've verified — continue"),
+    msg,
+    h("div", { class: "auth-links" },
+      h("a", { href: "#", onclick: async e => { e.preventDefault(); try { await user.sendEmailVerification(); msg.className = "auth-ok"; msg.textContent = "Verification email re-sent."; } catch (er) { msg.className = "auth-err"; msg.textContent = friendlyAuthError(er); } } }, "Resend email"),
+      h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+  );
+}
+
+function showPending(prof) {
+  authCard(
+    h("h1", null, "Awaiting approval"),
+    h("div", { class: "asub" }, "Signed in as " + prof.email),
+    h("div", { class: "auth-note" }, "Your account is verified but not yet approved. An Administrator needs to assign you a role in Settings → Roles before you can view the reports."),
+    h("button", { class: "abtn", onclick: () => location.reload() }, "Check again"),
+    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+  );
+}
+
+async function ensureProfile(user) {
+  const ref = db.collection("users").doc(user.uid);
+  const snap = await ref.get();
+  if (snap.exists) return Object.assign({ uid: user.uid }, snap.data());
+  const isBoss = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const prof = {
+    name: sessionStorage.getItem("cc.signupName") || user.displayName || "",
+    email: user.email,
+    role: isBoss ? "admin" : "pending",
+    countries: isBoss ? COUNTRIES.map(c => c.id) : [],
+    created: new Date().toISOString(),
+  };
+  await ref.set(prof);
+  return Object.assign({ uid: user.uid }, prof);
+}
+
+async function route(user) {
+  if (!user) { state.user = null; showLogin("signin"); return; }
+  if (!user.emailVerified) { showVerify(user); return; }
+  try {
+    await user.getIdToken(true);   // refresh token so email_verified is current in security rules
+    const prof = await ensureProfile(user);
+    if (!prof.role || prof.role === "pending") { state.user = null; showPending(prof); return; }
+    state.user = prof;
+    startApp();
+  } catch (e) {
+    authCard(h("h1", null, "Something went wrong"),
+      h("div", { class: "auth-err" }, friendlyAuthError(e)),
+      h("button", { class: "abtn", onclick: () => location.reload() }, "Reload"),
+      h("div", { class: "auth-links" }, h("a", { href: "#", onclick: ev => { ev.preventDefault(); auth.signOut(); } }, "Sign out")));
+  }
+}
+
+async function initAuth() {
+  if (!FIREBASE_CONFIG) { startApp(); return; }   // sign-in disabled — open dashboard
+  authCard(h("h1", null, "Cycle Count Report"), h("div", { class: "asub" }, "Loading sign-in…"));
+  try {
+    const V = "10.14.1";
+    await loadScript("https://www.gstatic.com/firebasejs/" + V + "/firebase-app-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/" + V + "/firebase-auth-compat.js");
+    await loadScript("https://www.gstatic.com/firebasejs/" + V + "/firebase-firestore-compat.js");
+    firebase.initializeApp(FIREBASE_CONFIG);
+    auth = firebase.auth();
+    db = firebase.firestore();
+    auth.onAuthStateChanged(route);
+  } catch (e) {
+    authCard(h("h1", null, "Sign-in unavailable"),
+      h("div", { class: "auth-err" }, "Could not load the sign-in service: " + (e.message || e)),
+      h("button", { class: "abtn", onclick: () => location.reload() }, "Retry"));
+  }
+}
+
+/* ============================== BOOT ============================== */
 if (typeof DecompressionStream === "undefined") {
-  contentEl.textContent = "";
-  contentEl.append(h("div", { class: "fatal" }, "This browser is too old for the dashboard — please open it in a recent version of Edge or Chrome."));
+  authCard(h("h1", null, "Browser too old"),
+    h("div", { class: "auth-err" }, "Please open this dashboard in a recent version of Edge or Chrome."));
 } else {
-  refresh(true);
+  initAuth();
 }
 </script>
 </body>
