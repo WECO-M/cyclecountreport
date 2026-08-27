@@ -1340,10 +1340,7 @@ async function ensureProfile(user) {
 
 async function route(user) {
   if (!user) { state.user = null; showLogin("signin"); return; }
-  // The bootstrap Administrator account skips email verification (corporate
-  // mail filters were eating the verification emails); everyone else must verify.
-  const isBossEmail = (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
-  if (!user.emailVerified && !isBossEmail) { showVerify(user); return; }
+  if (!user.emailVerified) { showVerify(user); return; }
   try {
     await user.getIdToken(true);   // refresh token so email_verified is current in security rules
     const prof = await ensureProfile(user);
