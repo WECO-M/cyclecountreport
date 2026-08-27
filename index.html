@@ -329,7 +329,14 @@ const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
 
 // ---- Sign-in (Firebase). Leave null to run the dashboard with sign-in disabled. ----
 // The first account registered with ADMIN_EMAIL becomes the Administrator.
-const FIREBASE_CONFIG = null; // e.g. { apiKey:"…", authDomain:"…", projectId:"…", appId:"…" }
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA3AHtSB64Bo1AtRjdnXV4JJgKIRt-Eg-g",
+  authDomain: "cyclecountreport.firebaseapp.com",
+  projectId: "cyclecountreport",
+  storageBucket: "cyclecountreport.firebasestorage.app",
+  messagingSenderId: "624938816026",
+  appId: "1:624938816026:web:f580e846db975c5c34b7a3",
+};
 const ADMIN_EMAIL = "ng_thianwei@iora.com.my";
 
 // v2 config: red is now "at or below 94%" (was "below 92%") — reset stored thresholds once
