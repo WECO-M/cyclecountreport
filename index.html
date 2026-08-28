@@ -30,6 +30,7 @@
     --wash-row-low:rgba(208,59,59,0.055);
     --chip-good:   rgba(12,163,12,0.13);
     --chip-low:    rgba(208,59,59,0.13);
+    --chip-warn:   rgba(250,178,25,0.20);
   }
   :root[data-theme="dark"] { color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
@@ -53,6 +54,7 @@
       --wash-row-low:rgba(208,59,59,0.10);
       --chip-good:   rgba(12,163,12,0.22);
       --chip-low:    rgba(208,59,59,0.24);
+      --chip-warn:   rgba(250,178,25,0.28);
     }
   }
   :root[data-theme="dark"] {
@@ -74,6 +76,7 @@
     --wash-row-low:rgba(208,59,59,0.10);
     --chip-good:   rgba(12,163,12,0.22);
     --chip-low:    rgba(208,59,59,0.24);
+    --chip-warn:   rgba(250,178,25,0.28);
   }
 
   * { box-sizing: border-box; }
@@ -233,6 +236,30 @@
   tr.avgrow th.rowhead, tr.avgrow td { border-top: 1px solid var(--grid); color: var(--ink-2); font-weight: 600; background: var(--surface-1); }
   td.dcell { font-weight: 600; }
 
+  /* ---------- Weekly adjustments ---------- */
+  .adjwrap { display: flex; gap: 5px; align-items: center; }
+  select.adjsel { font-size: 12px; padding: 2px 5px; border-radius: 6px; }
+  select.adjsel.s-done { background: var(--chip-good); }
+  select.adjsel.s-pending { background: var(--chip-warn); }
+  select.adjsel.s-error { background: var(--chip-low); }
+  button.adjrem { padding: 2px 8px; font-size: 12px; }
+  button.adjrem.has { color: var(--series-1); font-weight: 700; border-color: var(--series-1); }
+  .adjdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 4px; vertical-align: 2px; }
+  .adjdot.done { background: var(--status-good); }
+  .adjdot.pending { background: var(--status-warning); }
+  .adjdot.error { background: var(--status-critical); }
+  #popover {
+    position: fixed; z-index: 60; display: none; width: 280px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.2); padding: 12px; font-size: 13px;
+  }
+  #popover h3 { margin: 0 0 8px; font-size: 13px; }
+  #popover textarea {
+    width: 100%; min-height: 64px; margin-top: 8px; font: inherit; resize: vertical;
+    background: var(--page); color: var(--ink); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px;
+  }
+  #popover .prow { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+
   .chart-wrap { width: 100%; position: relative; }
   .chart-wrap svg { display: block; }
   .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 2px 0 8px; }
@@ -313,6 +340,7 @@
   <main id="content"><div class="loading">Loading cycle count data from Google Sheets…</div></main>
 </div>
 <div id="tooltip" role="status"></div>
+<div id="popover"></div>
 
 <script>
 "use strict";
@@ -347,6 +375,7 @@ if (localStorage.getItem("cc.cfgV") !== "2") {
 }
 const state = {
   data: {},              // countryId -> { brands, fetchedAt }
+  adj: {},               // countryId -> { docId -> adjustment record }
   country: localStorage.getItem("cc.country") || "SG",
   view: "dash",          // dash | settings
   active: localStorage.getItem("cc.tab") || "overview",
@@ -721,6 +750,87 @@ function lineChart({ series, weeks, height = 250, endLabels = false }) {
   return wrap;
 }
 
+/* ============================== WEEKLY ADJUSTMENTS ============================== */
+const ADJ_OPTIONS = [["", "—"], ["done", "Done"], ["pending", "Pending"], ["error", "Error"]];
+const ADJ_LABEL = { done: "Done", pending: "Pending", error: "Error" };
+function adjEnabled() { return !!(db && state.user); }
+function adjDocId(brand, store, serial) {
+  return (state.country + "_" + brand.sheet + "_" + store + "_" + Math.round(serial)).replace(/[\/\s]+/g, "-");
+}
+function getAdj(brand, store, serial) {
+  const m = state.adj[state.country];
+  return m ? m[adjDocId(brand, store, serial)] : null;
+}
+async function loadAdjustments() {
+  if (!adjEnabled()) return;
+  const cid = state.country;
+  try {
+    const snap = await db.collection("adjustments").where("country", "==", cid).get();
+    const m = {};
+    snap.forEach(d => { m[d.id] = d.data(); });
+    state.adj[cid] = m;
+    if (cid === state.country && state.view === "dash") renderApp();
+  } catch (e) {
+    adjErrBanner("Couldn't load adjustment statuses", e);
+  }
+}
+function adjErrBanner(prefix, e) {
+  bannerSlot.textContent = "";
+  bannerSlot.append(h("div", { class: "banner", role: "alert" }, prefix + ": " + ((e && e.message) || e)));
+}
+async function saveAdj(brand, week, store, patch) {
+  const id = adjDocId(brand, store, week.serial);
+  const cur = getAdj(brand, store, week.serial) || {};
+  const next = {
+    country: state.country, brand: brand.sheet, store,
+    week: Math.round(week.serial), weekLabel: week.full,
+    status: "status" in patch ? patch.status : (cur.status || ""),
+    remark: "remark" in patch ? patch.remark : (cur.remark || ""),
+    updatedBy: state.user.email, updatedByName: state.user.name || "",
+    updatedAt: new Date().toISOString(),
+  };
+  const ref = db.collection("adjustments").doc(id);
+  const m = state.adj[state.country] = state.adj[state.country] || {};
+  if (!next.status && !next.remark) { await ref.delete(); delete m[id]; }
+  else { await ref.set(next); m[id] = next; }
+  renderApp();
+}
+
+const popover = document.getElementById("popover");
+let popoverOpen = false;
+function closePopover() { popover.style.display = "none"; popover.textContent = ""; popoverOpen = false; }
+document.addEventListener("click", e => { if (popoverOpen && !popover.contains(e.target)) closePopover(); });
+addEventListener("keydown", e => { if (e.key === "Escape") closePopover(); });
+function openAdjEditor(anchor, brand, week, store) {
+  hideTooltip();
+  closePopover();
+  const cur = getAdj(brand, store, week.serial) || {};
+  const sel = h("select", null, ADJ_OPTIONS.map(([v, t]) => h("option", { value: v, selected: (cur.status || "") === v ? "" : null }, t)));
+  const ta = h("textarea", { placeholder: "Remark — what is the problem / what was adjusted?" });
+  ta.value = cur.remark || "";
+  const err = h("div", { class: "auth-err" }, "");
+  popover.append(
+    h("h3", null, store + " — adjustment, week of " + week.full),
+    h("div", null, "Status ", sel), ta,
+    cur.updatedBy ? h("div", { style: "color:var(--muted); font-size:11.5px; margin-top:6px;" }, "Last saved by " + (cur.updatedByName || cur.updatedBy)) : null,
+    err,
+    h("div", { class: "prow" },
+      h("button", { onclick: closePopover }, "Cancel"),
+      h("button", { class: "primary", onclick: async ev => {
+        ev.target.disabled = true;
+        try { await saveAdj(brand, week, store, { status: sel.value, remark: ta.value.trim() }); closePopover(); }
+        catch (e2) { err.textContent = "Could not save: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
+      } }, "Save")));
+  popover.style.display = "block";
+  const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor;
+  const pw = 280, ph = popover.offsetHeight || 220;
+  const left = Math.min(innerWidth - pw - 10, Math.max(6, r.left));
+  let top = r.bottom + 6;
+  if (top + ph > innerHeight - 8) top = Math.max(6, r.top - ph - 6);
+  popover.style.left = left + "px"; popover.style.top = top + "px";
+  setTimeout(() => { popoverOpen = true; }, 0);   // skip the click that opened it
+}
+
 /* ============================== RENDER: DASHBOARD ============================== */
 const contentEl = document.getElementById("content");
 const tabsEl = document.getElementById("tabs");
@@ -838,6 +948,15 @@ function cellTooltip(ev, brand, week, e) {
     if (e.updateLoc) el.append(ttRow("Update location", e.updateLoc));
     if (e.checkIn) el.append(ttRow("Check in", e.checkIn));
     if (e.remark) el.append(ttRow("Remark", e.remark));
+    if (adjEnabled()) {
+      const adj = getAdj(brand, e.store, week.serial);
+      if (adj && (adj.status || adj.remark)) {
+        el.append(ttRow("Adjustment", ADJ_LABEL[adj.status] || "—"));
+        if (adj.remark) el.append(ttRow("Adj. remark", adj.remark));
+        if (adj.updatedByName || adj.updatedBy) el.append(ttRow("By", adj.updatedByName || adj.updatedBy));
+      }
+      el.append(h("div", { style: "color:var(--muted); font-size:11px; margin-top:4px;" }, "Click cell to edit this week's adjustment"));
+    }
   });
 }
 
@@ -897,6 +1016,7 @@ function renderBrand(brand) {
   const headRow = h("tr", null, h("th", { class: "rowhead" }, "Store"));
   weeks.forEach((w, wi) => headRow.append(h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label)));
   headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
+  if (adjEnabled() && latestWeek) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
   table.append(h("thead", null, headRow));
   const tbody = h("tbody");
   for (const r of rows) {
@@ -907,17 +1027,32 @@ function renderBrand(brand) {
     tr.append(th);
     r.entries.forEach((e, wi) => {
       if (!e || (e.pct == null && !e.status && !e.countDate)) { tr.append(h("td", { class: "cell nodata" }, "–")); return; }
+      const adj = adjEnabled() ? getAdj(brand, r.store, weeks[wi].serial) : null;
+      const dot = adj && adj.status ? h("span", { class: "adjdot " + adj.status, title: "Adjustment: " + ADJ_LABEL[adj.status] }) : null;
+      let td;
       if (e.pct == null) {
-        const td = h("td", { class: "cell pending hasdata", tabindex: "0" }, shortStatus(e.status));
-        wireCell(td, brand, weeks[wi], e);
-        tr.append(td); return;
+        td = h("td", { class: "cell pending hasdata", tabindex: "0" }, shortStatus(e.status), dot);
+      } else {
+        td = h("td", { class: "cell hasdata " + classify(e.pct), tabindex: "0",
+          "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" }, fmtPct(e.pct), dot);
       }
-      const td = h("td", { class: "cell hasdata " + classify(e.pct), tabindex: "0",
-        "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" }, fmtPct(e.pct));
       wireCell(td, brand, weeks[wi], e);
+      if (adjEnabled()) td.addEventListener("click", () => openAdjEditor(td, brand, weeks[wi], r.store));
       tr.append(td);
     });
     tr.append(h("td", { class: "dcell" }, deltaEl(r.delta)));
+    if (adjEnabled() && latestWeek) {
+      const adj = getAdj(brand, r.store, latestWeek.serial) || {};
+      const sel = h("select", { class: "adjsel" + (adj.status ? " s-" + adj.status : ""),
+        onchange: async ev => {
+          try { await saveAdj(brand, latestWeek, r.store, { status: ev.target.value }); }
+          catch (e2) { adjErrBanner("Could not save adjustment", e2); }
+        } },
+        ADJ_OPTIONS.map(([v, t]) => h("option", { value: v, selected: (adj.status || "") === v ? "" : null }, t)));
+      const rem = h("button", { class: "adjrem" + (adj.remark ? " has" : ""), title: adj.remark || "Add remark",
+        onclick: ev => { ev.stopPropagation(); openAdjEditor(ev.target, brand, latestWeek, r.store); } }, "✎");
+      tr.append(h("td", null, h("div", { class: "adjwrap" }, sel, rem)));
+    }
     tbody.append(tr);
   }
   const avgTr = h("tr", { class: "avgrow" }, h("th", { class: "rowhead" }, "Brand average"));
@@ -925,12 +1060,13 @@ function renderBrand(brand) {
   let avgDelta = null;
   if (latestAvg != null && prevAvg != null) avgDelta = latestAvg - prevAvg;
   avgTr.append(h("td", { class: "dcell" }, deltaEl(avgDelta)));
+  if (adjEnabled() && latestWeek) avgTr.append(h("td"));
   tbody.append(avgTr);
   table.append(tbody);
 
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
-    h("div", { class: "h2sub" }, "Hover a cell for count details (parts, status, missing / check-in, remarks)"),
+    h("div", { class: "h2sub" }, "Hover a cell for count details" + (adjEnabled() ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")),
     h("div", { class: "matrix-scroll" }, table)));
 
   frag.append(h("section", { class: "card" },
@@ -1181,6 +1317,7 @@ function ensureCountryData() {
   const d = state.data[state.country];
   setUpdated();
   if (!d || Date.now() - d.fetchedAt.getTime() > REFRESH_MS) refresh(!d);
+  if (adjEnabled() && !state.adj[state.country]) loadAdjustments();
 }
 
 document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
