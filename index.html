@@ -257,6 +257,9 @@
   #popover .irow .k { color: var(--ink-2); white-space: nowrap; }
   #popover .irow .v { font-weight: 600; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
   #popover .sep { border-top: 1px solid var(--grid); margin: 9px 0; }
+  #popover .qrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  #popover .qrow label { flex: 1; color: var(--ink-2); font-size: 12.5px; }
+  #popover .qrow input { width: 92px; padding: 4px 7px; }
   #popover {
     position: fixed; z-index: 60; display: none; width: 300px;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
@@ -802,12 +805,15 @@ async function saveAdj(brand, week, store, patch) {
     week: Math.round(week.serial), weekLabel: week.full,
     status: "status" in patch ? patch.status : (cur.status || ""),
     remark: "remark" in patch ? patch.remark : (cur.remark || ""),
+    qtyMissing: "qtyMissing" in patch ? patch.qtyMissing : (cur.qtyMissing || ""),
+    qtyUpdateLoc: "qtyUpdateLoc" in patch ? patch.qtyUpdateLoc : (cur.qtyUpdateLoc || ""),
+    qtyCheckIn: "qtyCheckIn" in patch ? patch.qtyCheckIn : (cur.qtyCheckIn || ""),
     updatedBy: state.user.email, updatedByName: state.user.name || "",
     updatedAt: new Date().toISOString(),
   };
   const ref = db.collection("adjustments").doc(id);
   const m = state.adj[state.country] = state.adj[state.country] || {};
-  if (!next.status && !next.remark) { await ref.delete(); delete m[id]; }
+  if (!next.status && !next.remark && !next.qtyMissing && !next.qtyUpdateLoc && !next.qtyCheckIn) { await ref.delete(); delete m[id]; }
   else { await ref.set(next); m[id] = next; }
   renderApp();
 }
@@ -878,7 +884,18 @@ function openAdjEditor(anchor, brand, week, store, entry) {
     for (const [k, v] of info) popover.append(h("div", { class: "irow" }, h("span", { class: "k" }, k), h("span", { class: "v" }, v)));
     popover.append(h("div", { class: "sep" }));
   }
-  popover.append(h("div", null, "Adjustment status ", sel), ta);
+  const qMissing = h("input", { type: "number", min: "0", step: "1", placeholder: "qty" });
+  qMissing.value = cur.qtyMissing != null ? cur.qtyMissing : "";
+  const qUpdate = h("input", { type: "number", min: "0", step: "1", placeholder: "qty" });
+  qUpdate.value = cur.qtyUpdateLoc != null ? cur.qtyUpdateLoc : "";
+  const qCheckIn = h("input", { type: "number", min: "0", step: "1", placeholder: "qty" });
+  qCheckIn.value = cur.qtyCheckIn != null ? cur.qtyCheckIn : "";
+  popover.append(
+    h("div", null, "Adjustment status ", sel),
+    h("div", { class: "qrow" }, h("label", null, "Missing (Check Out)"), qMissing),
+    h("div", { class: "qrow" }, h("label", null, "Update Location"), qUpdate),
+    h("div", { class: "qrow" }, h("label", null, "Check In"), qCheckIn),
+    ta);
   if (cur.updatedBy) popover.append(h("div", { style: "color:var(--muted); font-size:11.5px; margin-top:6px;" }, "Last saved by " + (cur.updatedByName || cur.updatedBy)));
   popover.append(
     err,
@@ -886,7 +903,13 @@ function openAdjEditor(anchor, brand, week, store, entry) {
       h("button", { onclick: closePopover }, "Cancel"),
       h("button", { class: "primary", onclick: async ev => {
         ev.target.disabled = true;
-        try { await saveAdj(brand, week, store, { status: sel.value, remark: ta.value.trim() }); closePopover(); }
+        try {
+          await saveAdj(brand, week, store, {
+            status: sel.value, remark: ta.value.trim(),
+            qtyMissing: qMissing.value.trim(), qtyUpdateLoc: qUpdate.value.trim(), qtyCheckIn: qCheckIn.value.trim(),
+          });
+          closePopover();
+        }
         catch (e2) { err.textContent = "Could not save: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
       } }, "Save")));
   popover.style.display = "block";
@@ -1018,8 +1041,11 @@ function cellTooltip(ev, brand, week, e) {
     if (e.remark) el.append(ttRow("Remark", e.remark));
     if (adjEnabled()) {
       const adj = getAdj(brand, e.store, week.serial);
-      if (adj && (adj.status || adj.remark)) {
+      if (adj && (adj.status || adj.remark || adj.qtyMissing || adj.qtyUpdateLoc || adj.qtyCheckIn)) {
         el.append(ttRow("Adjustment", ADJ_LABEL[adj.status] || "—"));
+        if (adj.qtyMissing) el.append(ttRow("Adj. missing (check out)", adj.qtyMissing));
+        if (adj.qtyUpdateLoc) el.append(ttRow("Adj. update location", adj.qtyUpdateLoc));
+        if (adj.qtyCheckIn) el.append(ttRow("Adj. check in", adj.qtyCheckIn));
         if (adj.remark) el.append(ttRow("Adj. remark", adj.remark));
         if (adj.updatedByName || adj.updatedBy) el.append(ttRow("By", adj.updatedByName || adj.updatedBy));
       }
