@@ -820,6 +820,7 @@ async function saveAdj(brand, week, store, patch) {
   // If the editor popup is open for this same store & week, refresh it in place
   if (popoverOpen && popCtx && popCtx.brand.sheet === brand.sheet && popCtx.store === store
       && Math.round(popCtx.week.serial) === Math.round(week.serial)) {
+    popCtx.commit = null;   // refreshing, not user-closing — don't re-save stale editor values
     openAdjEditor(popCtx.rect, popCtx.brand, popCtx.week, popCtx.store, popCtx.entry);
   }
 }
@@ -867,11 +868,18 @@ const popover = document.getElementById("popover");
 let popoverOpen = false;
 let popCtx = null;   // context of the open editor: {brand, week, store, entry, rect}
 function closePopover() { popover.style.display = "none"; popover.textContent = ""; popoverOpen = false; popCtx = null; }
-document.addEventListener("click", e => { if (popoverOpen && !popover.contains(e.target)) closePopover(); });
+document.addEventListener("click", e => {
+  if (!popoverOpen || popover.contains(e.target)) return;
+  const commit = popCtx ? popCtx.commit : null;   // clicking outside saves any changes
+  closePopover();
+  if (commit) commit().catch(e2 => adjErrBanner("Could not save adjustment", e2));
+});
 addEventListener("keydown", e => { if (e.key === "Escape") closePopover(); });
 function openAdjEditor(anchor, brand, week, store, entry) {
   hideTooltip();
+  const prevCommit = popoverOpen && popCtx ? popCtx.commit : null;
   closePopover();
+  if (prevCommit) prevCommit().catch(e2 => adjErrBanner("Could not save adjustment", e2));
   const cur = getAdj(brand, store, week.serial) || {};
   const sel = h("select", null, ADJ_OPTIONS.map(([v, t]) => h("option", { value: v, selected: (cur.status || "") === v ? "" : null }, t)));
   const ta = h("textarea", { placeholder: "Remark — what is the problem / what was adjusted?" });
@@ -922,7 +930,12 @@ function openAdjEditor(anchor, brand, week, store, entry) {
   popover.style.display = "block";
   const rr = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor;
   const r = { left: rr.left, top: rr.top, bottom: rr.bottom };
-  popCtx = { brand, week, store, entry, rect: r };
+  const initial = JSON.stringify([cur.status || "", cur.remark || "", String(cur.qtyMissing || ""), String(cur.qtyUpdateLoc || ""), String(cur.qtyCheckIn || "")]);
+  popCtx = { brand, week, store, entry, rect: r, commit: async () => {
+    const vals = [sel.value, ta.value.trim(), qMissing.value.trim(), qUpdate.value.trim(), qCheckIn.value.trim()];
+    if (JSON.stringify(vals) === initial) return;   // nothing changed — no write
+    await saveAdj(brand, week, store, { status: vals[0], remark: vals[1], qtyMissing: vals[2], qtyUpdateLoc: vals[3], qtyCheckIn: vals[4] });
+  } };
   const pw = 300, ph = popover.offsetHeight || 220;
   const left = Math.min(innerWidth - pw - 10, Math.max(6, r.left));
   let top = r.bottom + 6;
