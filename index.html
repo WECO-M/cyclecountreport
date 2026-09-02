@@ -239,6 +239,9 @@
   /* ---------- Weekly adjustments ---------- */
   .mv { padding: 0 5px; font-size: 10px; line-height: 16px; margin-left: 3px; border-radius: 5px; color: var(--muted); }
   .mv:hover { color: var(--ink); }
+  .edit-seq { padding: 0 7px; font-size: 11px; line-height: 18px; margin-left: 7px; border-radius: 5px; color: var(--muted); }
+  .edit-seq:hover { color: var(--ink); }
+  .edit-seq.on { color: var(--series-1); border-color: var(--series-1); font-weight: 700; }
   .adjwrap { display: flex; gap: 5px; align-items: center; }
   select.adjsel { font-size: 12px; padding: 2px 5px; border-radius: 6px; }
   select.adjsel.s-done { background: var(--chip-good); }
@@ -379,6 +382,7 @@ const state = {
   data: {},              // countryId -> { brands, fetchedAt }
   adj: {},               // countryId -> { docId -> adjustment record }
   order: {},             // countryId -> { docId -> store-order record }
+  reorder: false,        // true while the admin is rearranging the store sequence
   country: localStorage.getItem("cc.country") || "SG",
   view: "dash",          // dash | settings
   active: localStorage.getItem("cc.tab") || "overview",
@@ -1060,7 +1064,16 @@ function renderBrand(brand) {
   }
 
   const table = h("table", { class: "matrix" });
-  const headRow = h("tr", null, h("th", { class: "rowhead" }, "Store"));
+  const canReorder = state.sort === "store" && adjEnabled() && state.user.role === "admin";
+  const storeTh = h("th", { class: "rowhead" }, "Store");
+  if (canReorder) {
+    storeTh.append(h("button", {
+      class: "edit-seq" + (state.reorder ? " on" : ""),
+      title: state.reorder ? "Done rearranging — hide the arrows" : "Rearrange the store sequence",
+      onclick: () => { state.reorder = !state.reorder; renderApp(); },
+    }, state.reorder ? "✓ Done" : "✎"));
+  }
+  const headRow = h("tr", null, storeTh);
   weeks.forEach((w, wi) => headRow.append(h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label)));
   headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
   if (adjEnabled() && latestWeek) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
@@ -1071,7 +1084,7 @@ function renderBrand(brand) {
     const th = h("th", { class: "rowhead" }, r.store);
     if (r.chronicLow) th.append(h("span", { class: "flagico", title: "Consistently low" }, "⚠"));
     else if (r.chronicHigh) th.append(h("span", { class: "starico", title: "Consistently high" }, "✓"));
-    if (state.sort === "store" && adjEnabled() && state.user.role === "admin") {
+    if (canReorder && state.reorder) {
       th.append(
         h("button", { class: "mv", title: "Move up", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, -1); } }, "▲"),
         h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"));
