@@ -247,6 +247,7 @@
   select.adjsel.s-done { background: var(--chip-good); }
   select.adjsel.s-pending { background: var(--chip-warn); }
   select.adjsel.s-error { background: var(--chip-low); }
+  select.adjsel option { background: var(--surface-1); color: var(--ink); }
   button.adjrem { padding: 2px 8px; font-size: 12px; }
   button.adjrem.has { color: var(--series-1); font-weight: 700; border-color: var(--series-1); }
   .adjdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 4px; vertical-align: 2px; }
@@ -816,6 +817,11 @@ async function saveAdj(brand, week, store, patch) {
   if (!next.status && !next.remark && !next.qtyMissing && !next.qtyUpdateLoc && !next.qtyCheckIn) { await ref.delete(); delete m[id]; }
   else { await ref.set(next); m[id] = next; }
   renderApp();
+  // If the editor popup is open for this same store & week, refresh it in place
+  if (popoverOpen && popCtx && popCtx.brand.sheet === brand.sheet && popCtx.store === store
+      && Math.round(popCtx.week.serial) === Math.round(week.serial)) {
+    openAdjEditor(popCtx.rect, popCtx.brand, popCtx.week, popCtx.store, popCtx.entry);
+  }
 }
 
 /* ---- Custom store sequence (shared, admin-arranged) ---- */
@@ -859,7 +865,8 @@ async function moveStore(brand, rows, store, dir) {
 
 const popover = document.getElementById("popover");
 let popoverOpen = false;
-function closePopover() { popover.style.display = "none"; popover.textContent = ""; popoverOpen = false; }
+let popCtx = null;   // context of the open editor: {brand, week, store, entry, rect}
+function closePopover() { popover.style.display = "none"; popover.textContent = ""; popoverOpen = false; popCtx = null; }
 document.addEventListener("click", e => { if (popoverOpen && !popover.contains(e.target)) closePopover(); });
 addEventListener("keydown", e => { if (e.key === "Escape") closePopover(); });
 function openAdjEditor(anchor, brand, week, store, entry) {
@@ -913,8 +920,10 @@ function openAdjEditor(anchor, brand, week, store, entry) {
         catch (e2) { err.textContent = "Could not save: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
       } }, "Save")));
   popover.style.display = "block";
-  const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor;
-  const pw = 280, ph = popover.offsetHeight || 220;
+  const rr = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor;
+  const r = { left: rr.left, top: rr.top, bottom: rr.bottom };
+  popCtx = { brand, week, store, entry, rect: r };
+  const pw = 300, ph = popover.offsetHeight || 220;
   const left = Math.min(innerWidth - pw - 10, Math.max(6, r.left));
   let top = r.bottom + 6;
   if (top + ph > innerHeight - 8) top = Math.max(6, r.top - ph - 6);
