@@ -237,6 +237,8 @@
   td.dcell { font-weight: 600; }
 
   /* ---------- Weekly adjustments ---------- */
+  .mv { padding: 0 5px; font-size: 10px; line-height: 16px; margin-left: 3px; border-radius: 5px; color: var(--muted); }
+  .mv:hover { color: var(--ink); }
   .adjwrap { display: flex; gap: 5px; align-items: center; }
   select.adjsel { font-size: 12px; padding: 2px 5px; border-radius: 6px; }
   select.adjsel.s-done { background: var(--chip-good); }
@@ -376,6 +378,7 @@ if (localStorage.getItem("cc.cfgV") !== "2") {
 const state = {
   data: {},              // countryId -> { brands, fetchedAt }
   adj: {},               // countryId -> { docId -> adjustment record }
+  order: {},             // countryId -> { docId -> store-order record }
   country: localStorage.getItem("cc.country") || "SG",
   view: "dash",          // dash | settings
   active: localStorage.getItem("cc.tab") || "overview",
@@ -608,11 +611,16 @@ function buildMatrix(brand) {
       delta: latest && prev ? latest.pct - prev.pct : null,
     };
   });
+  const customOrder = getStoreOrder(brand);
   rows.sort((a, b) => {
     if (state.sort === "lowfirst" || state.sort === "highfirst") {
       const av = a.latest ? a.latest.pct : (state.sort === "lowfirst" ? 2 : -1);
       const bv = b.latest ? b.latest.pct : (state.sort === "lowfirst" ? 2 : -1);
       if (av !== bv) return state.sort === "lowfirst" ? av - bv : bv - av;
+    } else if (customOrder) {
+      const ai = customOrder.indexOf(a.store), bi = customOrder.indexOf(b.store);
+      const av = ai < 0 ? 1e9 : ai, bv = bi < 0 ? 1e9 : bi;
+      if (av !== bv) return av - bv;
     }
     return a.store.localeCompare(b.store);
   });
@@ -796,6 +804,45 @@ async function saveAdj(brand, week, store, patch) {
   renderApp();
 }
 
+/* ---- Custom store sequence (shared, admin-arranged) ---- */
+function storeOrderId(brand) { return (state.country + "_" + brand.sheet).replace(/[\/\s]+/g, "-"); }
+function getStoreOrder(brand) {
+  const m = state.order[state.country];
+  const rec = m ? m[storeOrderId(brand)] : null;
+  return rec && Array.isArray(rec.order) ? rec.order : null;
+}
+async function loadStoreOrders() {
+  if (!adjEnabled()) return;
+  const cid = state.country;
+  try {
+    const snap = await db.collection("storeOrders").where("country", "==", cid).get();
+    const m = {};
+    snap.forEach(d => { m[d.id] = d.data(); });
+    state.order[cid] = m;
+    if (cid === state.country && state.view === "dash") renderApp();
+  } catch (e) {
+    adjErrBanner("Couldn't load the store sequence", e);
+  }
+}
+async function moveStore(brand, rows, store, dir) {
+  const seq = rows.map(r => r.store);
+  const i = seq.indexOf(store), j = i + dir;
+  if (i < 0 || j < 0 || j >= seq.length) return;
+  [seq[i], seq[j]] = [seq[j], seq[i]];
+  const id = storeOrderId(brand);
+  const rec = {
+    country: state.country, brand: brand.sheet, order: seq,
+    updatedBy: state.user.email, updatedByName: state.user.name || "",
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await db.collection("storeOrders").doc(id).set(rec);
+    const m = state.order[state.country] = state.order[state.country] || {};
+    m[id] = rec;
+    renderApp();
+  } catch (e) { adjErrBanner("Could not save the store sequence", e); }
+}
+
 const popover = document.getElementById("popover");
 let popoverOpen = false;
 function closePopover() { popover.style.display = "none"; popover.textContent = ""; popoverOpen = false; }
@@ -899,7 +946,7 @@ function renderFilters() {
           h("option", { value: v, selected: state.window === v ? "" : null }, t)))),
     h("label", null, "Sort",
       h("select", { onchange: e => { state.sort = e.target.value; localStorage.setItem("cc.sort", state.sort); renderApp(); } },
-        [["store", "Store code"], ["lowfirst", "Lowest % first"], ["highfirst", "Highest % first"]].map(([v, t]) =>
+        [["store", "Store order"], ["lowfirst", "Lowest % first"], ["highfirst", "Highest % first"]].map(([v, t]) =>
           h("option", { value: v, selected: state.sort === v ? "" : null }, t)))),
     h("label", { title: "Cells at or above this are highlighted green" }, "High ≥",
       h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.greenT,
@@ -1024,6 +1071,11 @@ function renderBrand(brand) {
     const th = h("th", { class: "rowhead" }, r.store);
     if (r.chronicLow) th.append(h("span", { class: "flagico", title: "Consistently low" }, "⚠"));
     else if (r.chronicHigh) th.append(h("span", { class: "starico", title: "Consistently high" }, "✓"));
+    if (state.sort === "store" && adjEnabled() && state.user.role === "admin") {
+      th.append(
+        h("button", { class: "mv", title: "Move up", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, -1); } }, "▲"),
+        h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"));
+    }
     tr.append(th);
     r.entries.forEach((e, wi) => {
       if (!e || (e.pct == null && !e.status && !e.countDate)) { tr.append(h("td", { class: "cell nodata" }, "–")); return; }
@@ -1318,6 +1370,7 @@ function ensureCountryData() {
   setUpdated();
   if (!d || Date.now() - d.fetchedAt.getTime() > REFRESH_MS) refresh(!d);
   if (adjEnabled() && !state.adj[state.country]) loadAdjustments();
+  if (adjEnabled() && !state.order[state.country]) loadStoreOrders();
 }
 
 document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
