@@ -239,6 +239,10 @@
   /* ---------- Weekly adjustments ---------- */
   .mv { padding: 0 5px; font-size: 10px; line-height: 16px; margin-left: 3px; border-radius: 5px; color: var(--muted); }
   .mv:hover { color: var(--ink); }
+  .mv.hide:hover { color: var(--status-critical); border-color: var(--status-critical); }
+  .hiddenbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; font-size: 12.5px; color: var(--ink-2); }
+  .hidechip { padding: 2px 10px; border-radius: 6px; font-size: 12px; background: var(--page); }
+  .hidechip:hover { border-color: var(--status-good); color: var(--ink); }
   .edit-seq { padding: 0 7px; font-size: 11px; line-height: 18px; margin-left: 7px; border-radius: 5px; color: var(--muted); }
   .edit-seq:hover { color: var(--ink); }
   .edit-seq.on { color: var(--series-1); border-color: var(--series-1); font-weight: 700; }
@@ -606,7 +610,8 @@ function buildMatrix(brand) {
       if (!slot[wi] || (slot[wi].pct == null && e.pct != null)) slot[wi] = e;
     }
   });
-  const rows = [...stores.entries()].map(([store, entries]) => {
+  const hiddenStores = getHiddenStores(brand);
+  const rows = [...stores.entries()].filter(([store]) => !hiddenStores.includes(store)).map(([store, entries]) => {
     const counted = entries.map((e, wi) => e && e.pct != null ? { wi, pct: e.pct } : null).filter(Boolean);
     const recent = counted.slice(-4);
     const lows  = recent.filter(c => isLow(c.pct)).length;
@@ -827,10 +832,17 @@ async function saveAdj(brand, week, store, patch) {
 
 /* ---- Custom store sequence (shared, admin-arranged) ---- */
 function storeOrderId(brand) { return (state.country + "_" + brand.sheet).replace(/[\/\s]+/g, "-"); }
-function getStoreOrder(brand) {
+function getOrderRec(brand) {
   const m = state.order[state.country];
-  const rec = m ? m[storeOrderId(brand)] : null;
+  return m ? m[storeOrderId(brand)] : null;
+}
+function getStoreOrder(brand) {
+  const rec = getOrderRec(brand);
   return rec && Array.isArray(rec.order) ? rec.order : null;
+}
+function getHiddenStores(brand) {
+  const rec = getOrderRec(brand);
+  return rec && Array.isArray(rec.hidden) ? rec.hidden : [];
 }
 async function loadStoreOrders() {
   if (!adjEnabled()) return;
@@ -845,14 +857,13 @@ async function loadStoreOrders() {
     adjErrBanner("Couldn't load the store sequence", e);
   }
 }
-async function moveStore(brand, rows, store, dir) {
-  const seq = rows.map(r => r.store);
-  const i = seq.indexOf(store), j = i + dir;
-  if (i < 0 || j < 0 || j >= seq.length) return;
-  [seq[i], seq[j]] = [seq[j], seq[i]];
+async function saveOrderRec(brand, patch) {
   const id = storeOrderId(brand);
+  const cur = getOrderRec(brand) || {};
   const rec = {
-    country: state.country, brand: brand.sheet, order: seq,
+    country: state.country, brand: brand.sheet,
+    order: "order" in patch ? patch.order : (Array.isArray(cur.order) ? cur.order : []),
+    hidden: "hidden" in patch ? patch.hidden : (Array.isArray(cur.hidden) ? cur.hidden : []),
     updatedBy: state.user.email, updatedByName: state.user.name || "",
     updatedAt: new Date().toISOString(),
   };
@@ -861,7 +872,19 @@ async function moveStore(brand, rows, store, dir) {
     const m = state.order[state.country] = state.order[state.country] || {};
     m[id] = rec;
     renderApp();
-  } catch (e) { adjErrBanner("Could not save the store sequence", e); }
+  } catch (e) { adjErrBanner("Could not save the store list", e); }
+}
+async function moveStore(brand, rows, store, dir) {
+  const seq = rows.map(r => r.store);
+  const i = seq.indexOf(store), j = i + dir;
+  if (i < 0 || j < 0 || j >= seq.length) return;
+  [seq[i], seq[j]] = [seq[j], seq[i]];
+  await saveOrderRec(brand, { order: seq });
+}
+async function setStoreHidden(brand, store, hide) {
+  const hidden = getHiddenStores(brand).filter(s => s !== store);
+  if (hide) hidden.push(store);
+  await saveOrderRec(brand, { hidden });
 }
 
 const popover = document.getElementById("popover");
@@ -1152,7 +1175,8 @@ function renderBrand(brand) {
     if (canReorder && state.reorder) {
       th.append(
         h("button", { class: "mv", title: "Move up", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, -1); } }, "▲"),
-        h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"));
+        h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"),
+        h("button", { class: "mv hide", title: "Hide this store (no longer available)", onclick: ev => { ev.stopPropagation(); setStoreHidden(brand, r.store, true); } }, "✕"));
     }
     tr.append(th);
     r.entries.forEach((e, wi) => {
@@ -1194,10 +1218,14 @@ function renderBrand(brand) {
   tbody.append(avgTr);
   table.append(tbody);
 
+  const hiddenList = canReorder ? getHiddenStores(brand) : [];
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
-    h("div", { class: "h2sub" }, "Hover a cell for count details" + (adjEnabled() ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")),
-    h("div", { class: "matrix-scroll" }, table)));
+    h("div", { class: "h2sub" }, "Hover a cell for count details" + (adjEnabled() ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
+      + (hiddenList.length && !state.reorder ? " · " + hiddenList.length + " hidden store(s) — click ✎ to manage" : "")),
+    h("div", { class: "matrix-scroll" }, table),
+    (canReorder && state.reorder && hiddenList.length) ? h("div", { class: "hiddenbar" }, "Hidden stores — click to show again:",
+      hiddenList.map(s => h("button", { class: "hidechip", title: "Show " + s + " again", onclick: () => setStoreHidden(brand, s, false) }, s + " ↺"))) : null));
 
   frag.append(h("section", { class: "card" },
     h("h2", null, brand.name + " — average trend"),
