@@ -597,7 +597,9 @@ function activeBrands() {
   return d ? d.brands : [];
 }
 function windowWeeks(brand) {
-  const w = brand.weeks;
+  let w = brand.weeks;
+  const hw = getHiddenWeeks();
+  if (hw.length) w = w.filter(x => !hw.includes(Math.round(x.serial)));
   return state.window > 0 ? w.slice(-state.window) : w.slice();
 }
 function buildMatrix(brand) {
@@ -887,6 +889,31 @@ async function setStoreHidden(brand, store, hide) {
   await saveOrderRec(brand, { hidden });
 }
 
+/* ---- Hidden weeks (shared per country, stored alongside store orders) ---- */
+function weeksDocId() { return state.country + "__weeks"; }
+function getHiddenWeeks() {
+  const m = state.order[state.country];
+  const rec = m ? m[weeksDocId()] : null;
+  return rec && Array.isArray(rec.hiddenWeeks) ? rec.hiddenWeeks : [];
+}
+async function setWeekHidden(serial, hide) {
+  serial = Math.round(serial);
+  const hiddenWeeks = getHiddenWeeks().filter(s => s !== serial);
+  if (hide) hiddenWeeks.push(serial);
+  const id = weeksDocId();
+  const rec = {
+    country: state.country, brand: "__weeks", hiddenWeeks,
+    updatedBy: state.user.email, updatedByName: state.user.name || "",
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await db.collection("storeOrders").doc(id).set(rec);
+    const m = state.order[state.country] = state.order[state.country] || {};
+    m[id] = rec;
+    renderApp();
+  } catch (e) { adjErrBanner("Could not save the hidden weeks", e); }
+}
+
 const popover = document.getElementById("popover");
 let popoverOpen = false;
 let popCtx = null;   // context of the open editor: {brand, week, store, entry, rect}
@@ -1162,7 +1189,14 @@ function renderBrand(brand) {
     }, state.reorder ? "✓ Done" : "✎"));
   }
   const headRow = h("tr", null, storeTh);
-  weeks.forEach((w, wi) => headRow.append(h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label)));
+  weeks.forEach((w, wi) => {
+    const thw = h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label);
+    if (canReorder && state.reorder) {
+      thw.append(h("button", { class: "mv hide", title: "Hide this week (" + w.full + ")",
+        onclick: ev => { ev.stopPropagation(); setWeekHidden(w.serial, true); } }, "✕"));
+    }
+    headRow.append(thw);
+  });
   headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
   if (adjEnabled() && latestWeek) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
   table.append(h("thead", null, headRow));
@@ -1219,13 +1253,19 @@ function renderBrand(brand) {
   table.append(tbody);
 
   const hiddenList = canReorder ? getHiddenStores(brand) : [];
+  const hiddenWeekSerials = canReorder ? getHiddenWeeks().slice().sort((a, b) => a - b) : [];
+  const hiddenNotes = [];
+  if (hiddenList.length) hiddenNotes.push(hiddenList.length + " hidden store(s)");
+  if (hiddenWeekSerials.length) hiddenNotes.push(hiddenWeekSerials.length + " hidden week(s)");
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
     h("div", { class: "h2sub" }, "Hover a cell for count details" + (adjEnabled() ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
-      + (hiddenList.length && !state.reorder ? " · " + hiddenList.length + " hidden store(s) — click ✎ to manage" : "")),
+      + (hiddenNotes.length && !state.reorder ? " · " + hiddenNotes.join(" · ") + " — click ✎ to manage" : "")),
     h("div", { class: "matrix-scroll" }, table),
     (canReorder && state.reorder && hiddenList.length) ? h("div", { class: "hiddenbar" }, "Hidden stores — click to show again:",
-      hiddenList.map(s => h("button", { class: "hidechip", title: "Show " + s + " again", onclick: () => setStoreHidden(brand, s, false) }, s + " ↺"))) : null));
+      hiddenList.map(s => h("button", { class: "hidechip", title: "Show " + s + " again", onclick: () => setStoreHidden(brand, s, false) }, s + " ↺"))) : null,
+    (canReorder && state.reorder && hiddenWeekSerials.length) ? h("div", { class: "hiddenbar" }, "Hidden weeks — click to show again:",
+      hiddenWeekSerials.map(s => h("button", { class: "hidechip", title: "Show the week of " + dFull(serialToDate(s)) + " again", onclick: () => setWeekHidden(s, false) }, dLabel(serialToDate(s)) + " ↺"))) : null));
 
   frag.append(h("section", { class: "card" },
     h("h2", null, brand.name + " — average trend"),
