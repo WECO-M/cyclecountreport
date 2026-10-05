@@ -477,7 +477,10 @@ const BUILTIN_ROLES = {
   admin: { name: "Administrator", builtin: true, perms: { editAdjustments: true, manageStores: true, manageUsers: true } },
   executive: { name: "Executive", builtin: true, perms: { editAdjustments: true, manageStores: false, manageUsers: false } },
 };
-function roleInfo(id) { return BUILTIN_ROLES[id] || state.roles[id] || null; }
+function roleInfo(id) {
+  if (id === "admin") return BUILTIN_ROLES.admin;                 // Administrator is fixed
+  return state.roles[id] || BUILTIN_ROLES[id] || null;            // a saved doc overrides Executive's defaults
+}
 function roleName(id) { const ri = roleInfo(id); return ri ? (ri.name || id) : (!id || id === "pending" ? "Pending" : id); }
 function can(p) {
   if (!FIREBASE_CONFIG) return true;          // sign-in disabled — open dashboard
@@ -1493,12 +1496,13 @@ function renderSettings() {
         h("th", null, ""), h("th", null, "Role"), h("th", null, "View reports"), h("th", null, "Edit adjustments"),
         h("th", null, "Manage store layout"), h("th", null, "Manage users & roles"), h("th", null, "Active"))));
     const rtb = h("tbody");
-    const allRoles = [["admin", BUILTIN_ROLES.admin], ["executive", BUILTIN_ROLES.executive],
-      ...Object.entries(state.roles).sort((a, b) => (a[1].name || a[0]).localeCompare(b[1].name || b[0]))];
+    const allRoles = [["admin", BUILTIN_ROLES.admin], ["executive", roleInfo("executive")],
+      ...Object.entries(state.roles).filter(([id]) => id !== "executive")
+        .sort((a, b) => (a[1].name || a[0]).localeCompare(b[1].name || b[0]))];
     for (const [id, r] of allRoles) {
       rtb.append(h("tr", null,
-        h("td", null, r.builtin ? h("span", { class: "lockico", title: "Built-in role — cannot be edited" }, "🔒")
-                                : h("button", { class: "editbtn", title: "Edit role", onclick: () => openRoleEditor(id, r) }, "✎")),
+        h("td", null, id === "admin" ? h("span", { class: "lockico", title: "Built-in role — cannot be edited" }, "🔒")
+                                     : h("button", { class: "editbtn", title: "Edit role", onclick: () => openRoleEditor(id, r) }, "✎")),
         h("td", null, r.name || id),
         h("td", null, permIcon(true)),
         h("td", null, permIcon(!!(r.perms && r.perms.editAdjustments))),
@@ -1520,8 +1524,10 @@ function slugifyRole(name) {
 
 function openRoleEditor(roleId, data) {
   const isNew = !roleId;
+  const isExec = roleId === "executive";
   data = data || { name: "", active: true, perms: {} };
-  const nameIn = h("input", { type: "text", value: data.name || "", placeholder: "e.g. Warehouse Manager" });
+  const nameIn = h("input", { type: "text", value: data.name || "", placeholder: "e.g. Warehouse Manager",
+    disabled: isExec ? "" : null, title: isExec ? "Built-in role — the name stays Executive" : null });
   const activeSw = mkSwitch(data.active !== false, false);
   const pAdj = mkSwitch(!!(data.perms && data.perms.editAdjustments), false);
   const pStores = mkSwitch(!!(data.perms && data.perms.manageStores), false);
@@ -1532,7 +1538,7 @@ function openRoleEditor(roleId, data) {
   overlay.addEventListener("click", close);
 
   let delArmed = false;
-  const delBtn = isNew ? null : h("button", { onclick: async ev => {
+  const delBtn = (isNew || isExec) ? null : h("button", { onclick: async ev => {
     if (!delArmed) { delArmed = true; ev.target.textContent = "Really delete?"; return; }
     ev.target.disabled = true;
     try {
@@ -1599,9 +1605,12 @@ function openUserEditor(uid, row) {
   const nameIn = h("input", { type: "text", value: row.name || "" });
   const lockedSw = mkSwitch(!!row.locked, guarded, selfNote);
   const activeSw = mkSwitch(row.active !== false, guarded, selfNote);
-  const roleOptions = [["admin", "Administrator"], ["executive", "Executive"],
-    ...Object.entries(state.roles).filter(([i, r]) => r.active !== false).map(([i, r]) => [i, r.name || i]),
-    ["pending", "Pending (no access)"]];
+  const roleOptions = [["admin", "Administrator"]];
+  const execInfo = roleInfo("executive");
+  if (execInfo && execInfo.active !== false) roleOptions.push(["executive", execInfo.name || "Executive"]);
+  roleOptions.push(
+    ...Object.entries(state.roles).filter(([i, r]) => i !== "executive" && r.active !== false).map(([i, r]) => [i, r.name || i]),
+    ["pending", "Pending (no access)"]);
   const cur = row.role || "pending";
   if (!roleOptions.some(([v]) => v === cur)) roleOptions.push([cur, roleName(cur) + " (inactive role)"]);
   const roleSel = h("select", { disabled: guarded ? "" : null, title: selfNote },
