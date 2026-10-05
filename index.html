@@ -331,6 +331,13 @@
   .pill.p-locked { background: var(--chip-low); }
   .roletbl .acc { color: var(--ink-2); font-size: 12px; }
   .editbtn { padding: 2px 9px; font-size: 12.5px; }
+  .permyes, .permno {
+    display: inline-flex; width: 18px; height: 18px; border-radius: 50%;
+    align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700;
+  }
+  .permyes { background: var(--status-good); }
+  .permno { background: var(--status-critical); opacity: .75; }
+  .lockico { color: var(--muted); font-size: 13px; }
 
   /* ---- User edit drawer ---- */
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.38); z-index: 65; }
@@ -432,6 +439,7 @@ const state = {
   error: null,
   refreshing: false,
   user: null,            // {uid, email, name, role, countries} when sign-in is enabled
+  roles: {},             // custom roles from Firestore: id -> {name, active, perms}
 };
 
 /* ============================== UTILS ============================== */
@@ -464,6 +472,21 @@ function loadScript(src) {
   });
 }
 function country() { return COUNTRIES.find(c => c.id === state.country) || COUNTRIES[0]; }
+/* ---- Roles & permissions ---- */
+const BUILTIN_ROLES = {
+  admin: { name: "Administrator", builtin: true, perms: { editAdjustments: true, manageStores: true, manageUsers: true } },
+  executive: { name: "Executive", builtin: true, perms: { editAdjustments: true, manageStores: false, manageUsers: false } },
+};
+function roleInfo(id) { return BUILTIN_ROLES[id] || state.roles[id] || null; }
+function roleName(id) { const ri = roleInfo(id); return ri ? (ri.name || id) : (!id || id === "pending" ? "Pending" : id); }
+function can(p) {
+  if (!FIREBASE_CONFIG) return true;          // sign-in disabled — open dashboard
+  if (!state.user) return false;
+  if (state.user.role === "admin") return true;
+  const ri = roleInfo(state.user.role);
+  return !!(ri && ri.active !== false && ri.perms && ri.perms[p]);
+}
+
 function brandAllowed(sheet) {
   if (!FIREBASE_CONFIG || !state.user || state.user.role === "admin") return true;
   if (state.user.allBrands !== false) return true;
@@ -1154,7 +1177,7 @@ function cellTooltip(ev, brand, week, e) {
         if (adj.remark) el.append(ttRow("Adj. remark", adj.remark));
         if (adj.updatedByName || adj.updatedBy) el.append(ttRow("By", adj.updatedByName || adj.updatedBy));
       }
-      el.append(h("div", { style: "color:var(--muted); font-size:11px; margin-top:4px;" }, "Click cell to edit this week's adjustment"));
+      if (can("editAdjustments")) el.append(h("div", { style: "color:var(--muted); font-size:11px; margin-top:4px;" }, "Click cell to edit this week's adjustment"));
     }
   });
 }
@@ -1212,7 +1235,8 @@ function renderBrand(brand) {
   }
 
   const table = h("table", { class: "matrix" });
-  const canReorder = state.sort === "store" && adjEnabled() && state.user.role === "admin";
+  const canReorder = state.sort === "store" && adjEnabled() && can("manageStores");
+  const canAdj = adjEnabled() && can("editAdjustments") && latestWeek;
   const storeTh = h("th", { class: "rowhead" }, "Store");
   if (canReorder) {
     storeTh.append(h("button", {
@@ -1231,7 +1255,7 @@ function renderBrand(brand) {
     headRow.append(thw);
   });
   headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
-  if (adjEnabled() && latestWeek) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
+  if (canAdj) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
   table.append(h("thead", null, headRow));
   const tbody = h("tbody");
   for (const r of rows) {
@@ -1258,11 +1282,11 @@ function renderBrand(brand) {
           "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" }, fmtPct(e.pct), dot);
       }
       wireCell(td, brand, weeks[wi], e);
-      if (adjEnabled()) td.addEventListener("click", () => openAdjEditor(td, brand, weeks[wi], r.store, e));
+      if (canAdj) td.addEventListener("click", () => openAdjEditor(td, brand, weeks[wi], r.store, e));
       tr.append(td);
     });
     tr.append(h("td", { class: "dcell" }, deltaEl(r.delta)));
-    if (adjEnabled() && latestWeek) {
+    if (canAdj) {
       const adj = getAdj(brand, r.store, latestWeek.serial) || {};
       const sel = h("select", { class: "adjsel" + (adj.status ? " s-" + adj.status : ""),
         onchange: async ev => {
@@ -1281,7 +1305,7 @@ function renderBrand(brand) {
   let avgDelta = null;
   if (latestAvg != null && prevAvg != null) avgDelta = latestAvg - prevAvg;
   avgTr.append(h("td", { class: "dcell" }, deltaEl(avgDelta)));
-  if (adjEnabled() && latestWeek) avgTr.append(h("td"));
+  if (canAdj) avgTr.append(h("td"));
   tbody.append(avgTr);
   table.append(tbody);
 
@@ -1292,7 +1316,7 @@ function renderBrand(brand) {
   if (hiddenWeekSerials.length) hiddenNotes.push(hiddenWeekSerials.length + " hidden week(s)");
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
-    h("div", { class: "h2sub" }, "Hover a cell for count details" + (adjEnabled() ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
+    h("div", { class: "h2sub" }, "Hover a cell for count details" + (canAdj ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
       + (hiddenNotes.length && !state.reorder ? " · " + hiddenNotes.join(" · ") + " — click ✎ to manage" : "")),
     h("div", { class: "matrix-scroll" }, table),
     (canReorder && state.reorder && hiddenList.length) ? h("div", { class: "hiddenbar" }, "Hidden stores — click to show again:",
@@ -1400,7 +1424,7 @@ function renderSettings() {
     h("div", { class: "profgrid" },
       h("label", null, "Name"), nameInput,
       h("label", null, "Email"), h("input", { type: "email", value: u.email, disabled: "" }),
-      h("label", null, "Role"), h("input", { type: "text", value: u.role === "admin" ? "Administrator" : u.role === "executive" ? "Executive" : "Pending approval", disabled: "" }),
+      h("label", null, "Role"), h("input", { type: "text", value: roleName(u.role), disabled: "" }),
       h("div", { style: "margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;" },
         h("button", { class: "primary", onclick: async ev => {
           const btn = ev.target; btn.disabled = true;
@@ -1419,8 +1443,8 @@ function renderSettings() {
         } }, "Change password (email link)")),
       profMsg)));
 
-  // ---- User Management (admin only) ----
-  if (u.role === "admin") {
+  // ---- User Management (requires manage-users permission) ----
+  if (can("manageUsers")) {
     const card = h("section", { class: "card" },
       h("h2", null, "User Management"),
       h("div", { class: "h2sub" }, "Click ✎ to edit a user's access. New sign-ups appear as 'Pending' until you grant a role."));
@@ -1437,7 +1461,8 @@ function renderSettings() {
       const docs = snap.docs.sort((a, b) => (a.data().email || "").localeCompare(b.data().email || ""));
       for (const d of docs) {
         const row = d.data(); const uid = d.id;
-        const roleTxt = row.role === "admin" ? "Administrator" : row.role === "executive" ? "Executive" : "Pending";
+        const roleTxt = roleName(row.role);
+        const badgeCls = row.role === "admin" ? "admin" : (!row.role || row.role === "pending" || !roleInfo(row.role) ? "pending" : "executive");
         const status = h("td", null);
         if (row.locked) status.append(h("span", { class: "pill p-locked" }, "Locked"));
         status.append(h("span", { class: "pill " + (row.active === false ? "p-inactive" : "p-active") }, row.active === false ? "Inactive" : "Active"));
@@ -1447,7 +1472,7 @@ function renderSettings() {
           h("td", null, h("button", { class: "editbtn", title: "Edit user", onclick: () => openUserEditor(uid, row) }, "✎")),
           h("td", null, row.name || "—", uid === state.user.uid ? " (you)" : ""),
           h("td", null, row.email || uid),
-          h("td", null, h("span", { class: "rolebadge " + (row.role || "pending") }, roleTxt)),
+          h("td", null, h("span", { class: "rolebadge " + badgeCls }, roleTxt)),
           status,
           h("td", { class: "acc" }, row.role === "admin" ? "Everything" : access)));
       }
@@ -1457,8 +1482,104 @@ function renderSettings() {
       holder.textContent = "";
       holder.append(h("div", { class: "fatal" }, "Could not load users: " + e.message));
     });
+
+    // ---- Role Management ----
+    const rcard = h("section", { class: "card" },
+      h("h2", null, "Role Management"),
+      h("div", { class: "h2sub" }, "Define what each role can do, then assign roles in User Management above. Administrator and Executive are built-in; every active role can view the reports its user has country/brand access to."));
+    const permIcon = v => h("span", { class: v ? "permyes" : "permno", title: v ? "Allowed" : "Not allowed" }, v ? "✓" : "✕");
+    const rtbl = h("table", { class: "roletbl" },
+      h("thead", null, h("tr", null,
+        h("th", null, ""), h("th", null, "Role"), h("th", null, "View reports"), h("th", null, "Edit adjustments"),
+        h("th", null, "Manage store layout"), h("th", null, "Manage users & roles"), h("th", null, "Active"))));
+    const rtb = h("tbody");
+    const allRoles = [["admin", BUILTIN_ROLES.admin], ["executive", BUILTIN_ROLES.executive],
+      ...Object.entries(state.roles).sort((a, b) => (a[1].name || a[0]).localeCompare(b[1].name || b[0]))];
+    for (const [id, r] of allRoles) {
+      rtb.append(h("tr", null,
+        h("td", null, r.builtin ? h("span", { class: "lockico", title: "Built-in role — cannot be edited" }, "🔒")
+                                : h("button", { class: "editbtn", title: "Edit role", onclick: () => openRoleEditor(id, r) }, "✎")),
+        h("td", null, r.name || id),
+        h("td", null, permIcon(true)),
+        h("td", null, permIcon(!!(r.perms && r.perms.editAdjustments))),
+        h("td", null, permIcon(!!(r.perms && r.perms.manageStores))),
+        h("td", null, permIcon(!!(r.perms && r.perms.manageUsers))),
+        h("td", null, permIcon(r.active !== false))));
+    }
+    rtbl.append(rtb);
+    rcard.append(h("div", { class: "matrix-scroll" }, rtbl),
+      h("div", { style: "margin-top:12px;" }, h("button", { class: "primary", onclick: () => openRoleEditor(null, null) }, "+ New role")));
+    frag.append(rcard);
   }
   return frag;
+}
+
+function slugifyRole(name) {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+}
+
+function openRoleEditor(roleId, data) {
+  const isNew = !roleId;
+  data = data || { name: "", active: true, perms: {} };
+  const nameIn = h("input", { type: "text", value: data.name || "", placeholder: "e.g. Warehouse Manager" });
+  const activeSw = mkSwitch(data.active !== false, false);
+  const pAdj = mkSwitch(!!(data.perms && data.perms.editAdjustments), false);
+  const pStores = mkSwitch(!!(data.perms && data.perms.manageStores), false);
+  const pUsers = mkSwitch(!!(data.perms && data.perms.manageUsers), false);
+  const err = h("div", { class: "auth-err" }, "");
+  const overlay = h("div", { class: "overlay" });
+  const close = () => { overlay.remove(); drawer.remove(); };
+  overlay.addEventListener("click", close);
+
+  let delArmed = false;
+  const delBtn = isNew ? null : h("button", { onclick: async ev => {
+    if (!delArmed) { delArmed = true; ev.target.textContent = "Really delete?"; return; }
+    ev.target.disabled = true;
+    try {
+      await db.collection("roles").doc(roleId).delete();
+      delete state.roles[roleId];
+      close();
+      renderApp();
+    } catch (e2) { err.textContent = "Could not delete: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
+  } }, "Delete role");
+  if (delBtn) delBtn.style.marginRight = "auto";
+
+  const drawer = h("div", { class: "drawer", role: "dialog" },
+    h("h3", null, isNew ? "New role" : "Edit role"),
+    h("div", { class: "dsub" }, isNew ? "Pick a name, then switch on what this role may do." : "Changes apply the next time users with this role load the dashboard. Deleting a role sends its users back to 'Pending'."),
+    h("label", { class: "f" }, "Role name"), nameIn,
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Active"), activeSw.el),
+    h("label", { class: "f" }, "Permissions (viewing reports is always included)"),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Edit weekly adjustments"), pAdj.el),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Manage store layout (reorder / hide)"), pStores.el),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Manage users & roles"), pUsers.el),
+    err,
+    h("div", { class: "actions" },
+      delBtn,
+      h("button", { onclick: close }, "Cancel"),
+      h("button", { class: "primary", onclick: async ev => {
+        err.textContent = "";
+        const name = nameIn.value.trim();
+        if (!name) { err.textContent = "Please enter a role name."; return; }
+        const id = isNew ? slugifyRole(name) : roleId;
+        if (isNew && (!id || ["admin", "executive", "pending"].includes(id) || state.roles[id])) {
+          err.textContent = "That role name is reserved or already exists — pick another."; return;
+        }
+        ev.target.disabled = true;
+        const doc = {
+          name, active: activeSw.input.checked,
+          perms: { editAdjustments: pAdj.input.checked, manageStores: pStores.input.checked, manageUsers: pUsers.input.checked },
+          updatedBy: state.user.email, updatedAt: new Date().toISOString(),
+        };
+        try {
+          await db.collection("roles").doc(id).set(doc);
+          state.roles[id] = doc;
+          close();
+          renderApp();
+        } catch (e2) { err.textContent = "Could not save: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
+      } }, isNew ? "Create role" : "Update")));
+  addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
+  document.body.append(overlay, drawer);
 }
 
 function mkSwitch(checked, disabled, title) {
@@ -1470,15 +1591,21 @@ function mkSwitch(checked, disabled, title) {
 
 function openUserEditor(uid, row) {
   const isSelf = uid === state.user.uid;
-  const selfNote = isSelf ? "You can't change this on your own account" : null;
+  const guarded = isSelf || (row.role === "admin" && state.user.role !== "admin");
+  const selfNote = isSelf ? "You can't change this on your own account"
+    : guarded ? "Only an Administrator can change another Administrator" : null;
   const BRAND_IDS = Object.keys(BRAND_NAMES);
 
   const nameIn = h("input", { type: "text", value: row.name || "" });
-  const lockedSw = mkSwitch(!!row.locked, isSelf, selfNote);
-  const activeSw = mkSwitch(row.active !== false, isSelf, selfNote);
-  const roleSel = h("select", { disabled: isSelf ? "" : null, title: selfNote },
-    [["admin", "Administrator"], ["executive", "Executive"], ["pending", "Pending (no access)"]].map(([v, t]) =>
-      h("option", { value: v, selected: (row.role || "pending") === v ? "" : null }, t)));
+  const lockedSw = mkSwitch(!!row.locked, guarded, selfNote);
+  const activeSw = mkSwitch(row.active !== false, guarded, selfNote);
+  const roleOptions = [["admin", "Administrator"], ["executive", "Executive"],
+    ...Object.entries(state.roles).filter(([i, r]) => r.active !== false).map(([i, r]) => [i, r.name || i]),
+    ["pending", "Pending (no access)"]];
+  const cur = row.role || "pending";
+  if (!roleOptions.some(([v]) => v === cur)) roleOptions.push([cur, roleName(cur) + " (inactive role)"]);
+  const roleSel = h("select", { disabled: guarded ? "" : null, title: selfNote },
+    roleOptions.map(([v, t]) => h("option", { value: v, selected: cur === v ? "" : null }, t)));
   const ctyBoxes = COUNTRIES.map(c => {
     const cb = h("input", { type: "checkbox" });
     cb.checked = (row.countries || []).includes(c.id);
@@ -1522,7 +1649,7 @@ function openUserEditor(uid, row) {
             allBrands: allBrandsSw.input.checked,
             brands: brandBoxes.filter(b => b.cb.checked).map(b => b.id),
           };
-          if (!isSelf) {
+          if (!guarded) {
             patch.role = roleSel.value;
             patch.locked = lockedSw.input.checked;
             patch.active = activeSw.input.checked;
@@ -1768,6 +1895,13 @@ function showBlocked(kind, prof) {
   );
 }
 
+async function loadRoles() {
+  const snap = await db.collection("roles").get();
+  const m = {};
+  snap.forEach(d => { m[d.id] = d.data(); });
+  state.roles = m;
+}
+
 async function ensureProfile(user) {
   const ref = db.collection("users").doc(user.uid);
   const snap = await ref.get();
@@ -1792,9 +1926,11 @@ async function route(user) {
   try {
     await user.getIdToken(true);   // refresh token so email_verified is current in security rules
     const prof = await ensureProfile(user);
+    try { await loadRoles(); } catch (_) { state.roles = {}; }
     if (prof.locked) { state.user = null; showBlocked("locked", prof); return; }
     if (prof.active === false) { state.user = null; showBlocked("inactive", prof); return; }
-    if (!prof.role || prof.role === "pending") { state.user = null; showPending(prof); return; }
+    const ri = roleInfo(prof.role);
+    if (!prof.role || prof.role === "pending" || !ri || ri.active === false) { state.user = null; showPending(prof); return; }
     state.user = prof;
     startApp();
   } catch (e) {
