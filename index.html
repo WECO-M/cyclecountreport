@@ -325,9 +325,36 @@
   .roletbl { width: 100%; border-collapse: collapse; }
   .roletbl th, .roletbl td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--grid); font-size: 13px; }
   .roletbl thead th { border-top: none; color: var(--muted); font-weight: 550; font-size: 12px; }
-  .roletbl select { padding: 4px 8px; }
-  .roletbl .cty { display: inline-flex; gap: 10px; }
-  .roletbl .cty label { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+  .roletbl .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 9px; font-weight: 600; margin-right: 4px; white-space: nowrap; }
+  .pill.p-active { background: var(--chip-good); }
+  .pill.p-inactive { background: var(--chip-warn); }
+  .pill.p-locked { background: var(--chip-low); }
+  .roletbl .acc { color: var(--ink-2); font-size: 12px; }
+  .editbtn { padding: 2px 9px; font-size: 12.5px; }
+
+  /* ---- User edit drawer ---- */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.38); z-index: 65; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 92vw;
+    background: var(--surface-1); border-left: 1px solid var(--border);
+    box-shadow: -8px 0 30px rgba(0,0,0,.25); z-index: 66; padding: 20px 22px; overflow-y: auto;
+  }
+  .drawer h3 { margin: 0 0 4px; font-size: 15px; }
+  .drawer .dsub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .drawer label.f { display: block; font-size: 12.5px; color: var(--ink-2); margin: 13px 0 4px; }
+  .drawer input[type=text], .drawer input[type=email], .drawer select { width: 100%; padding: 8px 11px; }
+  .switchrow { display: flex; align-items: center; justify-content: space-between; margin: 13px 0 2px; }
+  .switchrow .sl { font-size: 13px; }
+  .sw { position: relative; display: inline-block; width: 36px; height: 20px; flex: none; }
+  .sw input { opacity: 0; width: 0; height: 0; }
+  .sw .knob { position: absolute; inset: 0; border-radius: 12px; background: var(--baseline); transition: .15s; cursor: pointer; }
+  .sw .knob::after { content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-1); top: 2px; left: 2px; transition: .15s; }
+  .sw input:checked + .knob { background: var(--status-good); }
+  .sw input:checked + .knob::after { left: 18px; }
+  .sw input:disabled + .knob { opacity: .4; cursor: default; }
+  .chkgrid { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 7px; }
+  .chkgrid label { display: inline-flex; gap: 5px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+  .drawer .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
   .rolebadge { font-size: 11.5px; padding: 2px 8px; border-radius: 9px; font-weight: 600; }
   .rolebadge.admin { background: var(--chip-good); }
   .rolebadge.pending { background: var(--chip-low); }
@@ -437,6 +464,11 @@ function loadScript(src) {
   });
 }
 function country() { return COUNTRIES.find(c => c.id === state.country) || COUNTRIES[0]; }
+function brandAllowed(sheet) {
+  if (!FIREBASE_CONFIG || !state.user || state.user.role === "admin") return true;
+  if (state.user.allBrands !== false) return true;
+  return (state.user.brands || []).includes(sheet);
+}
 function allowedCountries() {
   if (!FIREBASE_CONFIG || !state.user || state.user.role === "admin") return COUNTRIES;
   return COUNTRIES.filter(c => (state.user.countries || []).includes(c.id));
@@ -594,7 +626,8 @@ async function loadData(sheetId) {
 /* ============================== DERIVED DATA ============================== */
 function activeBrands() {
   const d = state.data[state.country];
-  return d ? d.brands : [];
+  const all = d ? d.brands : [];
+  return all.filter(b => brandAllowed(b.sheet));
 }
 function windowWeeks(brand) {
   let w = brand.weeks;
@@ -1386,11 +1419,11 @@ function renderSettings() {
         } }, "Change password (email link)")),
       profMsg)));
 
-  // ---- Roles (admin only) ----
+  // ---- User Management (admin only) ----
   if (u.role === "admin") {
     const card = h("section", { class: "card" },
-      h("h2", null, "Roles & access"),
-      h("div", { class: "h2sub" }, "Only Administrators can change roles. New sign-ups appear here as 'Pending' until you grant access."));
+      h("h2", null, "User Management"),
+      h("div", { class: "h2sub" }, "Click ✎ to edit a user's access. New sign-ups appear as 'Pending' until you grant a role."));
     const holder = h("div", null, h("div", { class: "loading" }, "Loading users…"));
     card.append(holder);
     frag.append(card);
@@ -1398,39 +1431,25 @@ function renderSettings() {
       holder.textContent = "";
       const tbl = h("table", { class: "roletbl" },
         h("thead", null, h("tr", null,
-          h("th", null, "Name"), h("th", null, "Email"), h("th", null, "Role"),
-          h("th", null, "Country access"), h("th", null, ""))));
+          h("th", null, ""), h("th", null, "Name"), h("th", null, "Email"), h("th", null, "Role"),
+          h("th", null, "Status"), h("th", null, "Access"))));
       const tb = h("tbody");
       const docs = snap.docs.sort((a, b) => (a.data().email || "").localeCompare(b.data().email || ""));
       for (const d of docs) {
         const row = d.data(); const uid = d.id;
-        const roleSel = h("select", null,
-          [["admin", "Administrator"], ["executive", "Executive"], ["pending", "Pending (no access)"]].map(([v, t]) =>
-            h("option", { value: v, selected: (row.role || "pending") === v ? "" : null }, t)));
-        const boxes = COUNTRIES.map(c => {
-          const cb = h("input", { type: "checkbox" });
-          cb.checked = (row.countries || []).includes(c.id);
-          return { id: c.id, cb, el: h("label", null, cb, c.id) };
-        });
-        const msg = h("span", { class: "auth-ok" }, "");
-        const save = h("button", { class: "primary", onclick: async ev => {
-          const btn = ev.target; btn.disabled = true; msg.textContent = "";
-          try {
-            await db.collection("users").doc(uid).update({
-              role: roleSel.value,
-              countries: boxes.filter(b => b.cb.checked).map(b => b.id),
-            });
-            msg.textContent = "Saved ✓";
-            if (uid === state.user.uid) { state.user.role = roleSel.value; renderApp(); }
-          } catch (e) { msg.textContent = "Failed: " + e.message; msg.className = "auth-err"; }
-          btn.disabled = false;
-        } }, "Save");
+        const roleTxt = row.role === "admin" ? "Administrator" : row.role === "executive" ? "Executive" : "Pending";
+        const status = h("td", null);
+        if (row.locked) status.append(h("span", { class: "pill p-locked" }, "Locked"));
+        status.append(h("span", { class: "pill " + (row.active === false ? "p-inactive" : "p-active") }, row.active === false ? "Inactive" : "Active"));
+        const access = (row.countries || []).join(", ") + " · " +
+          (row.allBrands !== false ? "All brands" : ((row.brands || []).map(b => BRAND_NAMES[b] || b).join(", ") || "No brands"));
         tb.append(h("tr", null,
+          h("td", null, h("button", { class: "editbtn", title: "Edit user", onclick: () => openUserEditor(uid, row) }, "✎")),
           h("td", null, row.name || "—", uid === state.user.uid ? " (you)" : ""),
           h("td", null, row.email || uid),
-          h("td", null, roleSel),
-          h("td", null, h("span", { class: "cty" }, boxes.map(b => b.el))),
-          h("td", null, save, " ", msg)));
+          h("td", null, h("span", { class: "rolebadge " + (row.role || "pending") }, roleTxt)),
+          status,
+          h("td", { class: "acc" }, row.role === "admin" ? "Everything" : access)));
       }
       tbl.append(tb);
       holder.append(h("div", { class: "matrix-scroll" }, tbl));
@@ -1440,6 +1459,86 @@ function renderSettings() {
     });
   }
   return frag;
+}
+
+function mkSwitch(checked, disabled, title) {
+  const input = h("input", { type: "checkbox" });
+  input.checked = checked;
+  if (disabled) input.disabled = true;
+  return { input, el: h("label", { class: "sw", title: title || null }, input, h("span", { class: "knob" })) };
+}
+
+function openUserEditor(uid, row) {
+  const isSelf = uid === state.user.uid;
+  const selfNote = isSelf ? "You can't change this on your own account" : null;
+  const BRAND_IDS = Object.keys(BRAND_NAMES);
+
+  const nameIn = h("input", { type: "text", value: row.name || "" });
+  const lockedSw = mkSwitch(!!row.locked, isSelf, selfNote);
+  const activeSw = mkSwitch(row.active !== false, isSelf, selfNote);
+  const roleSel = h("select", { disabled: isSelf ? "" : null, title: selfNote },
+    [["admin", "Administrator"], ["executive", "Executive"], ["pending", "Pending (no access)"]].map(([v, t]) =>
+      h("option", { value: v, selected: (row.role || "pending") === v ? "" : null }, t)));
+  const ctyBoxes = COUNTRIES.map(c => {
+    const cb = h("input", { type: "checkbox" });
+    cb.checked = (row.countries || []).includes(c.id);
+    return { id: c.id, cb, el: h("label", null, cb, c.title) };
+  });
+  const allBrandsSw = mkSwitch(row.allBrands !== false, false);
+  const brandBoxes = BRAND_IDS.map(b => {
+    const cb = h("input", { type: "checkbox" });
+    cb.checked = (row.brands || []).includes(b);
+    return { id: b, cb, el: h("label", null, cb, BRAND_NAMES[b]) };
+  });
+  const brandGrid = h("div", { class: "chkgrid" }, brandBoxes.map(b => b.el));
+  const syncBrandGrid = () => { brandGrid.style.display = allBrandsSw.input.checked ? "none" : "flex"; };
+  allBrandsSw.input.addEventListener("change", syncBrandGrid);
+
+  const err = h("div", { class: "auth-err" }, "");
+  const overlay = h("div", { class: "overlay" });
+  const close = () => { overlay.remove(); drawer.remove(); };
+  overlay.addEventListener("click", close);
+
+  const drawer = h("div", { class: "drawer", role: "dialog" },
+    h("h3", null, "Edit user"),
+    h("div", { class: "dsub" }, isSelf ? "This is your own account — role and status are protected." : "Changes take effect the next time this user loads the dashboard."),
+    h("label", { class: "f" }, "Name"), nameIn,
+    h("label", { class: "f" }, "Email (login — cannot be changed)"), h("input", { type: "email", value: row.email || "", disabled: "" }),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Locked"), lockedSw.el),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "Active"), activeSw.el),
+    h("label", { class: "f" }, "User Role"), roleSel,
+    h("label", { class: "f" }, "Country access"), h("div", { class: "chkgrid" }, ctyBoxes.map(c => c.el)),
+    h("div", { class: "switchrow" }, h("span", { class: "sl" }, "All Brand Access"), allBrandsSw.el),
+    brandGrid,
+    err,
+    h("div", { class: "actions" },
+      h("button", { onclick: close }, "Cancel"),
+      h("button", { class: "primary", onclick: async ev => {
+        ev.target.disabled = true; err.textContent = "";
+        try {
+          const patch = {
+            name: nameIn.value.trim(),
+            countries: ctyBoxes.filter(c => c.cb.checked).map(c => c.id),
+            allBrands: allBrandsSw.input.checked,
+            brands: brandBoxes.filter(b => b.cb.checked).map(b => b.id),
+          };
+          if (!isSelf) {
+            patch.role = roleSel.value;
+            patch.locked = lockedSw.input.checked;
+            patch.active = activeSw.input.checked;
+          }
+          await db.collection("users").doc(uid).update(patch);
+          if (isSelf) Object.assign(state.user, patch);
+          close();
+          renderApp();   // re-renders the settings view with fresh data
+        } catch (e2) {
+          err.textContent = "Could not save: " + ((e2 && e2.message) || e2);
+          ev.target.disabled = false;
+        }
+      } }, "Update")));
+  addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
+  document.body.append(overlay, drawer);
+  syncBrandGrid();
 }
 
 /* ============================== APP RENDER + REFRESH ============================== */
@@ -1658,6 +1757,17 @@ function showPending(prof) {
   );
 }
 
+function showBlocked(kind, prof) {
+  authCard(
+    h("h1", null, kind === "locked" ? "Account locked" : "Account deactivated"),
+    h("div", { class: "asub" }, "Signed in as " + prof.email),
+    h("div", { class: "auth-note" }, kind === "locked"
+      ? "Your account has been locked by an Administrator. Contact them if you believe this is a mistake."
+      : "Your account is currently inactive. An Administrator can reactivate it in Settings → User Management."),
+    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+  );
+}
+
 async function ensureProfile(user) {
   const ref = db.collection("users").doc(user.uid);
   const snap = await ref.get();
@@ -1668,6 +1778,8 @@ async function ensureProfile(user) {
     email: user.email,
     role: isBoss ? "admin" : "pending",
     countries: isBoss ? COUNTRIES.map(c => c.id) : [],
+    allBrands: true, brands: [],
+    active: true, locked: false,
     created: new Date().toISOString(),
   };
   await ref.set(prof);
@@ -1680,6 +1792,8 @@ async function route(user) {
   try {
     await user.getIdToken(true);   // refresh token so email_verified is current in security rules
     const prof = await ensureProfile(user);
+    if (prof.locked) { state.user = null; showBlocked("locked", prof); return; }
+    if (prof.active === false) { state.user = null; showBlocked("inactive", prof); return; }
     if (!prof.role || prof.role === "pending") { state.user = null; showPending(prof); return; }
     state.user = prof;
     startApp();
