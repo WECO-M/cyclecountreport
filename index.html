@@ -95,6 +95,9 @@
   .updated { color: var(--ink-2); font-size: 12.5px; }
   .updated .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background: var(--status-good); margin-right:6px; vertical-align: 1px;}
   .updated.err .dot { background: var(--status-critical); }
+  .updated .src { color: var(--muted); }
+  td.cell.est { font-style: italic; opacity: .75; }
+  .updated.backup .dot { background: var(--status-warning, #d99a1e); }
   button, select, input[type=number], input[type=text], input[type=email], input[type=password] {
     font: inherit; color: var(--ink);
     background: var(--surface-1);
@@ -380,7 +383,8 @@
     <span class="sub" id="sheetLink"></span>
     <span class="spacer"></span>
     <span class="updated" id="updated"></span>
-    <button id="btnRefresh" class="primary" title="Fetch latest data from the Google Sheet">↻ Refresh</button>
+    <select id="srcSel" title="Where the dashboard gets its data"></select>
+    <button id="btnRefresh" class="primary" title="Fetch the latest data">↻ Refresh</button>
     <button id="btnTheme" title="Theme">◐</button>
     <button id="btnSettings" title="Settings" style="display:none">⚙</button>
     <button id="btnSignOut" style="display:none">Sign out</button>
@@ -388,7 +392,7 @@
   <div id="bannerSlot"></div>
   <nav class="tabs" id="tabs"></nav>
   <div class="filters" id="filters"></div>
-  <main id="content"><div class="loading">Loading cycle count data from Google Sheets…</div></main>
+  <main id="content"><div class="loading">Loading cycle count data…</div></main>
 </div>
 <div id="tooltip" role="status"></div>
 <div id="popover"></div>
@@ -404,6 +408,9 @@ const COUNTRIES = [
 const BRAND_NAMES = { "iORA": "iORA", "SANS": "SANS & SANS", "TRT": "TRT", "MONOLOQ": "MONOLOQ" };
 const IGNORE_SHEET = /stock\s*take/i;
 const REFRESH_MS = 5 * 60 * 1000;          // auto-refresh every 5 minutes
+// BigQuery feed (Firestore bqData/{country}, written by the laptop job). Older than this → use the sheet.
+const BQ_STALE_DAYS = 3;
+const SOURCES = { auto: "Auto (BigQuery, sheet as backup)", bq: "BigQuery only", sheet: "Google Sheet only" };
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
 
 // ---- Sign-in (Firebase). Leave null to run the dashboard with sign-in disabled. ----
@@ -434,6 +441,7 @@ const state = {
   active: localStorage.getItem("cc.tab") || "overview",
   window: +(localStorage.getItem("cc.window") || 12),   // 0 = all
   sort: localStorage.getItem("cc.sort") || "store",
+  source: SOURCES[localStorage.getItem("cc.source")] ? localStorage.getItem("cc.source") : "auto",
   greenT: +(localStorage.getItem("cc.greenT") || 95),
   lowT: +(localStorage.getItem("cc.lowT") || 94),
   error: null,
@@ -647,6 +655,83 @@ async function loadData(sheetId) {
   }
   if (!brands.length) throw new Error("No cycle-count data found in the sheet — the tab layout may have changed.");
   return brands;
+}
+
+/* ============================== BIGQUERY FEED ============================== */
+// Firestore doc bqData/{country}: { payload: JSON string of {brands:[{sheet, weeks:[{serial, stores:[{store, countDate, parts}]}]}]},
+// newestCount, bqLoadedAt, generatedAt }. Same shape as the sheet parser, minus the hand-entered columns.
+async function loadBq(countryId) {
+  if (!db) return null;                                    // sign-in disabled — no Firestore
+  const snap = await db.collection("bqData").doc(countryId).get();
+  if (!snap.exists) return null;
+  const d = snap.data();
+  const brands = JSON.parse(d.payload).brands.map(b => ({
+    sheet: b.sheet,
+    name: BRAND_NAMES[b.sheet] || b.sheet,
+    weeks: b.weeks.map(w => {
+      const date = serialToDate(w.serial);
+      return {
+        serial: w.serial, date, label: dLabel(date), full: dFull(date),
+        stores: w.stores.map(s => {
+          const parts = s.parts.filter(p => p != null);
+          return {
+            store: s.store, status: "", countDate: s.countDate, parts,
+            pct: parts.length ? parts.reduce((x, y) => x + y, 0) / parts.length : null,
+            missing: "", updateLoc: "", checkIn: "", remark: "",
+            est: !!s.est,                                   // from the per-scan table — count may still be in progress
+          };
+        }),
+      };
+    }),
+  }));
+  return { brands, loadedAt: d.bqLoadedAt.toDate(), newest: d.newestCount };
+}
+
+// Status, missing, location, check-in and remarks are typed into the sheet by hand — keep showing them.
+// The sheet also fills what BigQuery lacks: counts it doesn't have, and provisional (est) % the sheet has checked.
+function overlayManual(bqBrands, sheetBrands) {
+  const idx = {};
+  for (const b of sheetBrands) for (const w of b.weeks) for (const s of w.stores) idx[b.sheet + "|" + Math.round(w.serial) + "|" + s.store] = s;
+  const seen = new Set();
+  for (const b of bqBrands) for (const w of b.weeks) for (const s of w.stores) {
+    const key = b.sheet + "|" + w.serial + "|" + s.store;
+    const m = idx[key];
+    if (!m) continue;
+    seen.add(key);
+    Object.assign(s, { status: m.status, missing: m.missing, updateLoc: m.updateLoc, checkIn: m.checkIn, remark: m.remark });
+    if (s.est && m.pct != null) Object.assign(s, { parts: m.parts, pct: m.pct, countDate: m.countDate || s.countDate, est: false });
+  }
+  for (const sb of sheetBrands) {
+    let b = bqBrands.find(x => x.sheet === sb.sheet);
+    if (!b) { b = { sheet: sb.sheet, name: sb.name, weeks: [] }; bqBrands.push(b); }
+    for (const sw of sb.weeks) {
+      const serial = Math.round(sw.serial);
+      const extra = sw.stores.filter(s => !seen.has(sb.sheet + "|" + serial + "|" + s.store) && (s.pct != null || s.status || s.countDate));
+      if (!extra.length) continue;
+      let w = b.weeks.find(x => x.serial === serial);
+      if (!w) { w = { serial, date: sw.date, label: sw.label, full: sw.full, stores: [] }; b.weeks.push(w); }
+      for (const s of extra) w.stores.push({ ...s, fromSheet: true });
+    }
+    b.weeks.sort((x, y) => x.serial - y.serial);
+  }
+}
+
+// Returns { brands, source } using BigQuery when it is fresh (or forced), else the Google Sheet backup.
+async function loadCountry(c) {
+  let bq = null, bqErr = null;
+  if (state.source !== "sheet") {
+    try { bq = await loadBq(c.id); } catch (e) { bqErr = e.message || String(e); }
+  }
+  const fresh = bq && Date.now() - bq.loadedAt.getTime() < BQ_STALE_DAYS * 86400000;
+  if (bq && (fresh || state.source === "bq")) {
+    try { overlayManual(bq.brands, await loadData(c.sheetId)); } catch (e) { /* sheet is optional here */ }
+    return { brands: bq.brands, source: { kind: "bq", loadedAt: bq.loadedAt, newest: bq.newest, stale: !fresh } };
+  }
+  const brands = await loadData(c.sheetId);
+  const why = state.source === "sheet" ? null
+    : !bq ? (bqErr ? "BigQuery data couldn't be read (" + bqErr + ")" : "no BigQuery data has been published yet")
+    : "BigQuery data is out of date (last loaded " + bq.loadedAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) + ")";
+  return { brands, source: { kind: "sheet", fallback: why } };
 }
 
 /* ============================== DERIVED DATA ============================== */
@@ -1170,6 +1255,8 @@ function cellTooltip(ev, brand, week, e) {
     if (e.updateLoc) el.append(ttRow("Update location", e.updateLoc));
     if (e.checkIn) el.append(ttRow("Check in", e.checkIn));
     if (e.remark) el.append(ttRow("Remark", e.remark));
+    if (e.est) el.append(ttRow("Source", "Provisional — scan snapshot, count may still be in progress"));
+    else if (e.fromSheet) el.append(ttRow("Source", "Google Sheet (not in BigQuery)"));
     if (adjEnabled()) {
       const adj = getAdj(brand, e.store, week.serial);
       if (adj && (adj.status || adj.remark || adj.qtyMissing || adj.qtyUpdateLoc || adj.qtyCheckIn)) {
@@ -1281,8 +1368,9 @@ function renderBrand(brand) {
       if (e.pct == null) {
         td = h("td", { class: "cell pending hasdata", tabindex: "0" }, shortStatus(e.status), dot);
       } else {
-        td = h("td", { class: "cell hasdata " + classify(e.pct), tabindex: "0",
-          "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" }, fmtPct(e.pct), dot);
+        td = h("td", { class: "cell hasdata " + classify(e.pct) + (e.est ? " est" : ""), tabindex: "0",
+          "aria-label": r.store + " week of " + weeks[wi].full + ": " + fmtPct(e.pct) + "%" + (e.est ? " (provisional)" : "") },
+          e.est ? "~" + fmtPct(e.pct) : fmtPct(e.pct), dot);
       }
       wireCell(td, brand, weeks[wi], e);
       if (canAdj) td.addEventListener("click", () => openAdjEditor(td, brand, weeks[wi], r.store, e));
@@ -1700,7 +1788,7 @@ function renderApp() {
     renderTitle();
   }
   const brands = activeBrands();
-  if (!brands.length) { contentEl.append(h("div", { class: "loading" }, "Loading cycle count data from Google Sheets…")); return; }
+  if (!brands.length) { contentEl.append(h("div", { class: "loading" }, "Loading cycle count data…")); return; }
   if (!brands.some(b => b.sheet === state.active) && state.active !== "overview") state.active = "overview";
   const brand = brands.find(b => b.sheet === state.active);
   contentEl.append(brand ? renderBrand(brand) : renderOverview());
@@ -1711,8 +1799,12 @@ function setUpdated() {
   updatedEl.classList.toggle("err", !!state.error);
   const d = state.data[state.country];
   const dot = h("span", { class: "dot" });
+  updatedEl.classList.toggle("backup", !!(d && d.source && d.source.kind === "sheet" && d.source.fallback));
   if (d && d.fetchedAt) {
-    updatedEl.append(dot, "Updated " + d.fetchedAt.toLocaleTimeString() + " · auto-refresh 5 min");
+    const src = !d.source ? ""
+      : d.source.kind === "bq" ? " · BigQuery, loaded " + d.source.loadedAt.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+      : d.source.fallback ? " · Google Sheet (backup)" : " · Google Sheet";
+    updatedEl.append(dot, "Updated " + d.fetchedAt.toLocaleTimeString() + " · auto-refresh 5 min", h("span", { class: "src" }, src));
   } else if (state.error) {
     updatedEl.append(dot, "No data yet");
   }
@@ -1725,10 +1817,17 @@ async function refresh(first) {
   bannerSlot.textContent = "";
   const cid = state.country;
   try {
-    const brands = await loadData(country().sheetId);
-    state.data[cid] = { brands, fetchedAt: new Date() };
+    const { brands, source } = await loadCountry(country());
+    state.data[cid] = { brands, source, fetchedAt: new Date() };
     state.error = null;
     renderApp();
+    if (source.fallback) {
+      bannerSlot.append(h("div", { class: "banner", role: "status" },
+        "Showing the Google Sheet backup — " + source.fallback + "."));
+    } else if (source.stale) {
+      bannerSlot.append(h("div", { class: "banner", role: "status" },
+        "BigQuery data is more than " + BQ_STALE_DAYS + " days old (last loaded " + source.loadedAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) + ")."));
+    }
   } catch (e) {
     state.error = e.message || String(e);
     const had = state.data[cid];
@@ -1755,6 +1854,15 @@ function ensureCountryData() {
 }
 
 document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
+const srcSel = document.getElementById("srcSel");
+for (const [k, label] of Object.entries(SOURCES)) srcSel.append(h("option", { value: k }, label));
+srcSel.value = state.source;
+srcSel.addEventListener("change", () => {
+  state.source = srcSel.value;
+  localStorage.setItem("cc.source", state.source);
+  state.data = {};                                         // reload every country from the chosen source
+  refresh(false);
+});
 document.getElementById("sheetLink").append(h("a", { href: "#", id: "sheetA", target: "_blank", rel: "noopener" }, "Open Google Sheet ↗"));
 
 const themeBtn = document.getElementById("btnTheme");
