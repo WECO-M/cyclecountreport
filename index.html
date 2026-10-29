@@ -79,6 +79,30 @@
     --chip-warn:   rgba(250,178,25,0.28);
   }
 
+  /* Cream theme — warm, low-glare alternative to plain white */
+  :root[data-theme="cream"] {
+    color-scheme: light;
+    --page:        #f3ead8;
+    --surface-1:   #faf4e4;
+    --ink:         #2a2318;
+    --ink-2:       #5a5140;
+    --muted:       #8a7f67;
+    --grid:        #e6dcc4;
+    --baseline:    #c6b795;
+    --border:      rgba(58,46,18,0.12);
+    --series-1:    #2a78d6;
+    --series-2:    #eb6834;
+    --series-3:    #1baf7a;
+    --series-4:    #eda100;
+    --delta-up:    #006300;
+    --wash-good:   rgba(12,163,12,0.16);
+    --wash-low:    rgba(208,59,59,0.16);
+    --wash-row-low:rgba(208,59,59,0.06);
+    --chip-good:   rgba(12,163,12,0.14);
+    --chip-low:    rgba(208,59,59,0.14);
+    --chip-warn:   rgba(250,178,25,0.22);
+  }
+
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -1867,15 +1891,16 @@ document.getElementById("sheetLink").append(h("a", { href: "#", id: "sheetA", ta
 
 const themeBtn = document.getElementById("btnTheme");
 function applyTheme(t) {
-  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  if (t === "light" || t === "dark" || t === "cream") document.documentElement.setAttribute("data-theme", t);
   else document.documentElement.removeAttribute("data-theme");
-  themeBtn.textContent = t === "light" ? "☀" : t === "dark" ? "🌙" : "◐";
-  themeBtn.title = "Theme: " + (t || "auto");
+  themeBtn.textContent = t === "light" ? "☀" : t === "cream" ? "☕" : t === "dark" ? "🌙" : "◐";
+  themeBtn.title = "Theme: " + (t || "auto") + " — click to switch (auto → light → cream → dark)";
 }
 applyTheme(localStorage.getItem("cc.theme") || "");
 themeBtn.addEventListener("click", () => {
+  const order = ["", "light", "cream", "dark"];
   const cur = localStorage.getItem("cc.theme") || "";
-  const next = cur === "" ? "light" : cur === "light" ? "dark" : "";
+  const next = order[(order.indexOf(cur) + 1) % order.length];
   localStorage.setItem("cc.theme", next);
   applyTheme(next);
   if (document.getElementById("appRoot").style.display !== "none") renderApp();
