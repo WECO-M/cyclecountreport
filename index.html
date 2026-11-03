@@ -883,6 +883,58 @@ function overlayManual(bqBrands, sheetBrands) {
   }
 }
 
+/* ---- Google Sheet copy in Firestore (written by the Apps Script in each sheet) ---- */
+// sheetData/{country}_{tab}: { country, tab, order, rows: JSON [[A..M], …], updatedAt }. Rows hold numbers
+// (date serials, percentages) and display text, the same values the xlsx export gives the parser.
+const SHEET_COLS = "ABCDEFGHIJKLM".split("");
+function rowCells(row) {
+  const cells = {};
+  row.forEach((v, i) => {
+    if (v == null || v === "") return;
+    cells[SHEET_COLS[i]] = typeof v === "number" ? { s: String(v), n: v } : { s: String(v).trim(), n: null };
+  });
+  return cells;
+}
+async function loadSheetCopy(countryId) {
+  if (!db) return null;
+  const snap = await db.collection("sheetData").where("country", "==", countryId).get();
+  if (snap.empty) return null;
+  const brands = [];
+  let updatedAt = null;
+  snap.forEach(d => {
+    const x = d.data();
+    if (IGNORE_SHEET.test(x.tab)) return;
+    const weeks = parseBrandRows(JSON.parse(x.rows).map(rowCells));
+    if (weeks.length) brands.push({ sheet: x.tab, name: BRAND_NAMES[x.tab] || x.tab, weeks, order: x.order || 99 });
+    const t = x.updatedAt && x.updatedAt.toDate();
+    if (t && (!updatedAt || t > updatedAt)) updatedAt = t;
+  });
+  brands.sort((a, b) => a.order - b.order);
+  return brands.length ? { brands, updatedAt } : null;
+}
+// The sheet's data: the Firestore copy when the Apps Script has written one, else a direct download
+// (only works while the sheet is shared as "Anyone with the link").
+async function loadSheetBrands(c) {
+  const copy = await loadSheetCopy(c.id).catch(() => null);
+  if (copy) return copy.brands;
+  return loadData(c.sheetId);
+}
+
+// Live updates: when the Apps Script writes a new copy, reload a moment later.
+let sheetWatch = null, sheetWatchCid = null, sheetWatchTimer = null;
+function watchSheetCopy() {
+  if (!db || !state.user || sheetWatchCid === state.country) return;
+  if (sheetWatch) sheetWatch();
+  sheetWatchCid = state.country;
+  let first = true;
+  sheetWatch = db.collection("sheetData").where("country", "==", state.country).onSnapshot(() => {
+    if (first) { first = false; return; }
+    clearTimeout(sheetWatchTimer);
+    const go = () => { if (state.refreshing) sheetWatchTimer = setTimeout(go, 1500); else refresh(false); };
+    sheetWatchTimer = setTimeout(go, 1500);
+  }, () => { sheetWatch = null; sheetWatchCid = null; });
+}
+
 // Returns { brands, source } using BigQuery when it is fresh (or forced), else the Google Sheet backup.
 async function loadCountry(c) {
   let bq = null, bqErr = null;
@@ -891,10 +943,10 @@ async function loadCountry(c) {
   }
   const fresh = bq && Date.now() - bq.loadedAt.getTime() < BQ_STALE_DAYS * 86400000;
   if (bq && (fresh || state.source === "bq")) {
-    try { overlayManual(bq.brands, await loadData(c.sheetId)); } catch (e) { /* sheet is optional here */ }
+    try { overlayManual(bq.brands, await loadSheetBrands(c)); } catch (e) { /* sheet is optional here */ }
     return { brands: bq.brands, source: { kind: "bq", loadedAt: bq.loadedAt, newest: bq.newest, stale: !fresh } };
   }
-  const brands = await loadData(c.sheetId);
+  const brands = await loadSheetBrands(c);
   const why = state.source === "sheet" ? null
     : !bq ? (bqErr ? "BigQuery data couldn't be read (" + bqErr + ")" : "no BigQuery data has been published yet")
     : "BigQuery data is out of date (last loaded " + bq.loadedAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) + ")";
@@ -2046,6 +2098,7 @@ function ensureCountryData() {
   if (!d || Date.now() - d.fetchedAt.getTime() > REFRESH_MS) refresh(!d);
   if (adjEnabled() && !state.adj[state.country]) loadAdjustments();
   if (adjEnabled() && !state.order[state.country]) loadStoreOrders();
+  watchSheetCopy();
 }
 
 document.getElementById("btnRefresh").addEventListener("click", () => refresh(false));
