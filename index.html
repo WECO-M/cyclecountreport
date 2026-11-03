@@ -115,7 +115,7 @@
     font: 14.5px/1.5 var(--sans);
     -webkit-font-smoothing: antialiased;
   }
-  button, select, input[type=number], input[type=text], input[type=email], input[type=password] {
+  button, select, input[type=number], input[type=text], input[type=email], input[type=password], input[type=month], input[type=date] {
     font: inherit; color: var(--ink);
     background: var(--surface-1);
     border: 1px solid var(--baseline);
@@ -232,6 +232,16 @@
   }
   .filters:empty { display: none; }
   .filters label, .filters .fl { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+  .filters { flex-direction: column; align-items: stretch; gap: 10px; }
+  .frow { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+  .frow .push { margin-left: auto; }
+  .frow .flab { min-width: 52px; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .frow.dates, .frow.colors { border-top: 1px solid var(--grid); padding-top: 10px; }
+  .frow.dates input[type=date] { width: 160px; cursor: pointer; }
+  .frow .arrow { color: var(--muted); }
+  .frow .muted { font-size: 12px; }
+  .frow .ck { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+  .frow .ck input { width: 62px; padding: 4px 7px; }
   .filters input[type=number] { width: 66px; padding: 5px 8px; }
   .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
   .seg button { border: none; background: none; border-radius: 7px; padding: 4px 11px; font-size: 12.5px; color: var(--ink-2); }
@@ -342,6 +352,27 @@
   .hiddenbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; font-size: 12.5px; color: var(--ink-2); }
   .hidechip { padding: 3px 11px; border-radius: 8px; font-size: 12px; background: var(--surface-2); }
   .hidechip:hover { border-color: var(--status-good); color: var(--ink); }
+  .muted { color: var(--muted); }
+  details.pick { position: relative; }
+  details.pick > summary {
+    list-style: none; cursor: pointer; padding: 6px 12px; border-radius: 9px; font-weight: 600; font-size: 13px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  details.pick > summary::-webkit-details-marker { display: none; }
+  .pkpanel {
+    position: absolute; z-index: 45; top: calc(100% + 6px); left: 0; width: 290px;
+    background: var(--surface-1); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .pkbar { display: flex; gap: 6px; }
+  .pkbar button { flex: 1; padding: 5px 8px; font-size: 12.5px; }
+  .pkbefore { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .pkbefore input { flex: 1; font-size: 12.5px; padding: 4px 6px; }
+  .pklist { max-height: 300px; overflow-y: auto; border: 1px solid var(--grid); border-radius: 9px; padding: 4px; }
+  .pk { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 7px; font-size: 13px; cursor: pointer; }
+  .pk:hover { background: var(--surface-2); }
+  .pk input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+  .pkfoot { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
   .edit-seq { padding: 0 8px; font-size: 11.5px; line-height: 20px; margin-left: 8px; border-radius: 6px; color: var(--muted); }
   .edit-seq:hover { color: var(--ink); }
   .edit-seq.on { color: var(--accent); border-color: var(--accent); font-weight: 700; }
@@ -578,6 +609,8 @@ const REFRESH_MS = 5 * 60 * 1000;          // auto-refresh every 5 minutes
 // BigQuery feed (Firestore bqData/{country}, written by the laptop job). Older than this → use the sheet.
 const BQ_STALE_DAYS = 3;
 const SOURCES = { auto: "Auto (BigQuery, sheet as backup)", bq: "BigQuery only", sheet: "Google Sheet only" };
+// Period filter: older weeks are left out automatically (default 2 months); "Custom" picks a month range for past records.
+const PERIODS = { "4w": "4 weeks", "2m": "2 months", "12m": "1 year", all: "All", custom: "Custom" };
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4"];
 
 // ---- Sign-in (Firebase). Leave null to run the dashboard with sign-in disabled. ----
@@ -606,7 +639,10 @@ const state = {
   country: localStorage.getItem("cc.country") || "SG",
   view: "dash",          // dash | settings
   active: localStorage.getItem("cc.tab") || "overview",
-  window: +(localStorage.getItem("cc.window") || 12),   // 0 = all
+  period: PERIODS[localStorage.getItem("cc.period")] ? localStorage.getItem("cc.period") : "2m",   // how far back the weeks go
+  from: localStorage.getItem("cc.from") || "",      // custom period, "YYYY-MM"
+  to: localStorage.getItem("cc.to") || "",
+  customOpen: false,     // true while the From/To date row is showing
   sort: localStorage.getItem("cc.sort") || "store",
   source: SOURCES[localStorage.getItem("cc.source")] ? localStorage.getItem("cc.source") : "auto",
   greenT: +(localStorage.getItem("cc.greenT") || 95),
@@ -963,7 +999,32 @@ function windowWeeks(brand) {
   let w = brand.weeks;
   const hw = getHiddenWeeks();
   if (hw.length) w = w.filter(x => !hw.includes(Math.round(x.serial)));
-  return state.window > 0 ? w.slice(-state.window) : w.slice();
+  const [lo, hi] = periodBounds();
+  return w.filter(x => x.date.getTime() >= lo && x.date.getTime() <= hi);
+}
+// [from, to] in ms for the Period filter: the last N months up to today (future week blocks stay), or a custom month range.
+function periodBounds() {
+  if (state.period === "custom") {
+    // "YYYY-MM-DD" from the date pickers (an older "YYYY-MM" value means the whole month)
+    const p = s => s.split("-").map(Number);
+    const lo = !state.from ? -Infinity : (([y, m, d]) => Date.UTC(y, m - 1, d || 1))(p(state.from));
+    const hi = !state.to ? Infinity : (([y, m, d]) => d ? Date.UTC(y, m - 1, d) : Date.UTC(y, m, 0))(p(state.to));
+    return [lo, hi];
+  }
+  const t = new Date();
+  if (state.period === "4w") return [Date.UTC(t.getFullYear(), t.getMonth(), t.getDate() - 28), Infinity];
+  const months = parseInt(state.period, 10);   // "2m", "12m"
+  if (!months) return [-Infinity, Infinity];
+  return [Date.UTC(t.getFullYear(), t.getMonth() - months, t.getDate()), Infinity];
+}
+function customText(short) {
+  const nice = s => s.length === 10 ? (short ? dLabel : dFull)(new Date(s + "T00:00:00Z")) : s;
+  return (state.from ? nice(state.from) : "start") + (short ? " – " : " to ") + (state.to ? nice(state.to) : (short ? "today" : "today"));
+}
+function periodText() {
+  if (state.period === "all") return "all weeks";
+  if (state.period === "custom") return customText();
+  return "the last " + PERIODS[state.period];
 }
 function buildMatrix(brand) {
   const weeks = windowWeeks(brand);
@@ -1263,6 +1324,9 @@ async function setWeekHidden(serial, hide) {
   serial = Math.round(serial);
   const hiddenWeeks = getHiddenWeeks().filter(s => s !== serial);
   if (hide) hiddenWeeks.push(serial);
+  await saveHiddenWeeks(hiddenWeeks);
+}
+async function saveHiddenWeeks(hiddenWeeks) {   // whole list at once, e.g. [] to show every hidden week again
   const id = weeksDocId();
   const rec = {
     country: state.country, brand: "__weeks", hiddenWeeks,
@@ -1276,6 +1340,57 @@ async function setWeekHidden(serial, hide) {
     renderApp();
   } catch (e) { adjErrBanner("Could not save the hidden weeks", e); }
 }
+
+/* ---- Edit mode: dropdown checklists to show/hide many weeks or stores at once ---- */
+// items: [{ id, text }]; ticked = shown. extra: optional element placed above the list (e.g. "hide weeks before").
+function pickList(label, items, hidden, onSave, extra) {
+  const boxes = items.map(it => {
+    const cb = h("input", { type: "checkbox" });
+    cb.checked = !hidden.includes(it.id);
+    return { it, cb, el: h("label", { class: "pk" }, cb, it.text) };
+  });
+  const setAll = on => boxes.forEach(b => { b.cb.checked = on; });
+  const save = h("button", { class: "primary", type: "button", onclick: async () => {
+    save.disabled = true;
+    await onSave(boxes.filter(b => !b.cb.checked).map(b => b.it.id));
+  } }, "Save");
+  const panel = h("div", { class: "pkpanel" },
+    h("div", { class: "pkbar" },
+      h("button", { type: "button", onclick: () => setAll(true) }, "Show all"),
+      h("button", { type: "button", onclick: () => setAll(false) }, "Hide all")),
+    extra ? extra(boxes) : null,
+    h("div", { class: "pklist" }, boxes.map(b => b.el)),
+    h("div", { class: "pkfoot" }, h("span", { class: "muted" }, "Ticked = shown"), save));
+  return h("details", { class: "pick" },
+    h("summary", null, label + (hidden.length ? " · " + hidden.length + " hidden" : " · all shown") + " ▾"), panel);
+}
+function weekPicker(brand) {
+  // Hidden weeks are shared by every brand tab of the country, so list the weeks of all of them, newest first.
+  const serials = new Set();
+  for (const b of activeBrands()) for (const w of b.weeks) serials.add(Math.round(w.serial));
+  const list = [...serials].sort((a, b) => b - a);
+  const items = list.map(s => ({ id: s, text: dFull(serialToDate(s)) }));
+  const before = boxes => h("label", { class: "pkbefore" }, "Hide weeks before",
+    h("input", { type: "date", onclick: e => { try { e.target.showPicker(); } catch (_) {} }, onchange: e => {
+      if (!e.target.value) return;
+      const cut = new Date(e.target.value + "T00:00:00Z").getTime();
+      boxes.forEach(b => { b.cb.checked = serialToDate(b.it.id).getTime() >= cut; });
+    } }));
+  return pickList("Weeks", items, getHiddenWeeks().map(Math.round), list2 => saveHiddenWeeks(list2), before);
+}
+function storePicker(brand) {
+  const stores = new Set();
+  for (const w of brand.weeks) for (const s of w.stores) stores.add(s.store);
+  const order = getStoreOrder(brand) || [];
+  const items = [...stores].sort((a, b) => {
+    const ai = order.indexOf(a), bi = order.indexOf(b);
+    return (ai < 0 ? 1e9 : ai) - (bi < 0 ? 1e9 : bi) || a.localeCompare(b);
+  }).map(s => ({ id: s, text: s }));
+  return pickList("Stores", items, getHiddenStores(brand), hidden => saveOrderRec(brand, { hidden }));
+}
+document.addEventListener("click", e => {   // clicking elsewhere closes an open checklist
+  for (const d of document.querySelectorAll("details.pick[open]")) if (!d.contains(e.target)) d.open = false;
+});
 
 const popover = document.getElementById("popover");
 let popoverOpen = false;
@@ -1422,31 +1537,45 @@ function renderFilters() {
   if (state.view !== "dash") return;
   const seg = (options, cur, pick) => h("span", { class: "seg" }, options.map(([v, t]) =>
     h("button", { class: cur === v ? "on" : null, "aria-pressed": cur === v ? "true" : "false", onclick: () => pick(v) }, t)));
-  filtersEl.append(
-    h("span", { class: "fl" }, "Weeks",
-      seg([[8, "8"], [12, "12"], [26, "26"], [0, "All"]], state.window,
-        v => { state.window = v; localStorage.setItem("cc.window", state.window); renderApp(); })),
-    h("span", { class: "fl" }, "Sort",
-      seg([["store", "Store order"], ["lowfirst", "Lowest first"], ["highfirst", "Highest first"]], state.sort,
-        v => { state.sort = v; localStorage.setItem("cc.sort", state.sort); renderApp(); })),
-    h("label", { title: "Cells at or above this are highlighted green" }, "High ≥",
-      h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.greenT,
-        onchange: e => { state.greenT = Math.min(100, Math.max(50, +e.target.value || 95)); localStorage.setItem("cc.greenT", state.greenT); renderApp(); } }), "%"),
-    h("label", { title: "Cells at or below this are highlighted red" }, "Low ≤",
-      h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state.lowT,
-        onchange: e => { state.lowT = Math.min(100, Math.max(50, +e.target.value || 94)); localStorage.setItem("cc.lowT", state.lowT); renderApp(); } }), "%"),
-    h("div", { class: "legend" },
-      legendKey("var(--wash-good)", "≥ " + state.greenT + "% high"),
-      legendKey("var(--page)", state.lowT + "–" + state.greenT + "%"),
-      legendKey("var(--wash-low)", "≤ " + state.lowT + "% low"),
-      h("span", { class: "key" }, h("span", { class: "swatch", style: "background:transparent" }, ""), "no count"),
-    )
-  );
-}
-function legendKey(bg, text) {
-  const sw = h("span", { class: "swatch" });
-  sw.style.background = bg;
-  return h("span", { class: "key" }, sw, text);
+  // Date box: a click anywhere on it opens the calendar (not only the small icon)
+  const dateIn = key => h("input", { type: "date", value: state[key].length === 10 ? state[key] : "",
+    onclick: e => { try { e.target.showPicker(); } catch (_) { /* older browsers: icon still works */ } },
+    onchange: e => {
+      state[key] = e.target.value; localStorage.setItem("cc." + key, state[key]);
+      if (state.from && state.to) state.customOpen = false;   // both dates picked → fold the date row away
+      renderApp();
+    } });
+  const pctIn = (key, def, title) => h("input", { type: "number", step: "0.5", min: "50", max: "100", value: state[key], title,
+    onchange: e => { state[key] = Math.min(100, Math.max(50, +e.target.value || def)); localStorage.setItem("cc." + key, state[key]); renderApp(); } });
+  filtersEl.append(...[
+    // Row 1: which weeks, and in what order
+    h("div", { class: "frow" },
+      h("span", { class: "fl" }, h("span", { class: "flab" }, "Period"),
+        // once dates are picked, the Custom button shows the range; click it again to change the dates
+        seg(Object.entries(PERIODS).map(([v, t]) => [v, v === "custom" && state.period === "custom" && !state.customOpen && (state.from || state.to) ? "Custom: " + customText(true) + " ✎" : t]),
+          state.period,
+          v => {
+            state.customOpen = v === "custom" ? (state.period === "custom" ? !state.customOpen : true) : false;
+            state.period = v; localStorage.setItem("cc.period", v); renderApp();
+          })),
+      h("span", { class: "fl push" }, h("span", { class: "flab" }, "Sort"),
+        seg([["store", "Store order"], ["lowfirst", "Lowest first"], ["highfirst", "Highest first"]], state.sort,
+          v => { state.sort = v; localStorage.setItem("cc.sort", state.sort); renderApp(); }))),
+    // Row 2 (Custom only): the date range
+    state.period === "custom" && (state.customOpen || !(state.from || state.to)) ? h("div", { class: "frow dates" },
+      h("span", { class: "fl" }, h("span", { class: "flab" }, "From"), dateIn("from")),
+      h("span", { class: "arrow" }, "→"),
+      h("span", { class: "fl" }, h("span", { class: "flab" }, "To"), dateIn("to")),
+      h("span", { class: "muted" }, "Leave To empty to show up to today"),
+      (state.from || state.to) ? h("button", { class: "primary", onclick: () => { state.customOpen = false; renderApp(); } }, "Done") : null) : null,
+    // Row 3: colour rules, editable in place
+    h("div", { class: "frow colors" },
+      h("span", { class: "flab" }, "Colours"),
+      h("span", { class: "ck" }, h("span", { class: "swatch", style: "background:var(--wash-good)" }), "High ≥", pctIn("greenT", 95, "Cells at or above this are green"), "%"),
+      h("span", { class: "ck" }, h("span", { class: "swatch", style: "background:var(--page)" }), state.lowT + "–" + state.greenT + "%"),
+      h("span", { class: "ck" }, h("span", { class: "swatch", style: "background:var(--wash-low)" }), "Low ≤", pctIn("lowT", 94, "Cells at or below this are red"), "%"),
+      h("span", { class: "ck" }, h("span", { class: "swatch", style: "background:transparent" }), "no count")),
+  ].filter(Boolean));
 }
 
 function deltaEl(d, opts) {
@@ -1558,12 +1687,7 @@ function renderBrand(brand) {
   }
   const headRow = h("tr", null, storeTh);
   weeks.forEach((w, wi) => {
-    const thw = h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label);
-    if (canReorder && state.reorder) {
-      thw.append(h("button", { class: "mv hide", title: "Hide this week (" + w.full + ")",
-        onclick: ev => { ev.stopPropagation(); setWeekHidden(w.serial, true); } }, "✕"));
-    }
-    headRow.append(thw);
+    headRow.append(h("th", { class: wi === li ? "latestcol" : null, title: w.full }, w.label));
   });
   headRow.append(h("th", { title: "Change: latest vs previous counted week" }, "Δ wk"));
   if (canAdj) headRow.append(h("th", { title: "Weekly adjustment for the latest week (" + latestWeek.label + ") — pick a status; ✎ adds a remark" }, "Adjustment"));
@@ -1577,8 +1701,7 @@ function renderBrand(brand) {
     if (canReorder && state.reorder) {
       th.append(
         h("button", { class: "mv", title: "Move up", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, -1); } }, "▲"),
-        h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"),
-        h("button", { class: "mv hide", title: "Hide this store (no longer available)", onclick: ev => { ev.stopPropagation(); setStoreHidden(brand, r.store, true); } }, "✕"));
+        h("button", { class: "mv", title: "Move down", onclick: ev => { ev.stopPropagation(); moveStore(brand, rows, r.store, 1); } }, "▼"));
     }
     tr.append(th);
     r.entries.forEach((e, wi) => {
@@ -1628,13 +1751,12 @@ function renderBrand(brand) {
   if (hiddenWeekSerials.length) hiddenNotes.push(hiddenWeekSerials.length + " hidden week(s)");
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
-    h("div", { class: "h2sub" }, "Hover a cell for count details" + (canAdj ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
+    h("div", { class: "h2sub" }, "Showing " + periodText() + " (change Period above for older weeks) · hover a cell for count details"
+      + (canAdj ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
       + (hiddenNotes.length && !state.reorder ? " · " + hiddenNotes.join(" · ") + " — click ✎ to manage" : "")),
-    h("div", { class: "matrix-scroll" }, table),
-    (canReorder && state.reorder && hiddenList.length) ? h("div", { class: "hiddenbar" }, "Hidden stores — click to show again:",
-      hiddenList.map(s => h("button", { class: "hidechip", title: "Show " + s + " again", onclick: () => setStoreHidden(brand, s, false) }, s + " ↺"))) : null,
-    (canReorder && state.reorder && hiddenWeekSerials.length) ? h("div", { class: "hiddenbar" }, "Hidden weeks — click to show again:",
-      hiddenWeekSerials.map(s => h("button", { class: "hidechip", title: "Show the week of " + dFull(serialToDate(s)) + " again", onclick: () => setWeekHidden(s, false) }, dLabel(serialToDate(s)) + " ↺"))) : null));
+    (canReorder && state.reorder) ? h("div", { class: "hiddenbar" }, "Choose what to show:",
+      weekPicker(brand), storePicker(brand), h("span", { class: "muted" }, "▲ ▼ next to a store change its position")) : null,
+    h("div", { class: "matrix-scroll" }, table)));
 
   frag.append(h("section", { class: "card" },
     h("h2", null, brand.name + " — average trend"),
