@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b1a3d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Cycle Count">
 <title>cyclecountreport_sg</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23e27ba3'/%3E%3Cstop offset='.5' stop-color='%23c49ad4'/%3E%3Cstop offset='1' stop-color='%238db9ec'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='32' fill='url(%23g)'/%3E%3Cpath d='M50 26A19 19 0 1 0 51 33M52 14v12H40M24 33l6 6 11-12' fill='none' stroke='white' stroke-width='5.5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -329,7 +334,8 @@
   }
   table.matrix thead th.rowhead { z-index: 3; color: var(--muted); font-size: 12px; font-weight: 600; }
   table.matrix tbody tr:hover th.rowhead { color: var(--accent); }
-  tr.chronic th.rowhead { box-shadow: inset 3px 0 0 var(--status-critical); background: var(--wash-row-low); border-radius: 6px; }
+  /* solid underlay: in dark mode the red wash is see-through, and cells scrolling under the sticky store column showed through it */
+  tr.chronic th.rowhead { box-shadow: inset 3px 0 0 var(--status-critical); background: linear-gradient(var(--wash-row-low), var(--wash-row-low)), var(--surface-1); border-radius: 6px; }
   .flagico { color: var(--status-critical); font-weight: 700; margin-left: 6px; font-size: 12px; }
   .starico { color: var(--status-good); font-weight: 700; margin-left: 6px; font-size: 12px; }
   td.cell { border-radius: 8px; cursor: default; font-weight: 600; }
@@ -392,7 +398,9 @@
     position: fixed; z-index: 60; display: none; width: 300px;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
     box-shadow: var(--shadow); padding: 14px; font-size: 13px;
+    max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); overflow-y: auto;
   }
+  #popover.sheet { border-radius: 16px; box-shadow: 0 -8px 30px rgba(0,0,0,.25); }
   #popover h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; }
   #popover .irow { display: flex; gap: 10px; padding: 2px 0; font-size: 12.5px; }
   #popover .irow .k { color: var(--ink-2); white-space: nowrap; }
@@ -549,6 +557,47 @@
     .auth-side { padding: 26px 22px; }
     .auth-side h1 { margin-top: 14px; }
     .auth-side .art, .auth-side .foot { display: none; }
+    /* sign-in: short brand strip on top, form straight below (no tall empty panel) */
+    .auth { grid-template-rows: auto 1fr; min-height: 100svh; }
+    .auth-side { padding: 22px 22px 24px; gap: 0; }
+    .auth-side h1 { font-size: 30px; }
+    .auth-box { place-items: start center; padding: 28px 20px 40px; }
+    /* tabs: fade on the right edge hints that more brands scroll in */
+    .tabs { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+    .tabs.at-end { -webkit-mask-image: none; mask-image: none; }
+    .tab { padding: 0 12px; }
+    /* page head: data source box takes the row, Refresh stays on one line */
+    .phtools { width: 100%; }
+    .phtools select { flex: 1; min-width: 0; max-width: none; }
+    .phtools button, .banner button { white-space: nowrap; }
+    /* filters: each control gets its own full row; segmented buttons scroll sideways instead of wrapping */
+    .frow { gap: 10px; width: 100%; min-width: 0; }
+    .frow > .fl { width: 100%; min-width: 0; }
+    .frow > .fl > .seg { width: 0; }   /* let the buttons scroll inside the card instead of stretching it */
+    .frow .push { margin-left: 0; }
+    .frow .flab { min-width: 46px; }
+    .seg { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    .seg::-webkit-scrollbar { display: none; }
+    .seg button { flex: none; white-space: nowrap; }
+    .frow.dates .arrow { display: none; }
+    .frow.dates input[type=date] { width: auto; flex: 1; min-width: 0; }
+    .kpi { padding: 13px 13px 12px; }
+    .kpi .delta { font-size: 11.5px; padding: 2px 6px; }
+    .attn-store { min-width: 64px; }
+    table.matrix th.rowhead { min-width: 76px; padding-left: 8px; padding-right: 6px; }   /* narrower store column leaves room for more weeks */
+    .attn-brand { min-width: 0; }
+    /* week / store pickers open as a bottom sheet */
+    .pkpanel { position: fixed; left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; max-height: 80svh; z-index: 70; }
+    .pklist { max-height: 42svh; }
+  }
+  /* touch screens: bigger tap targets; 16px text stops iPhone zooming into a box when you tap it */
+  @media (pointer: coarse) {
+    input, select, textarea { font-size: 16px !important; }
+    .seg button { padding: 7px 12px; }
+    .iconbtn { width: 40px; height: 40px; }
+    .umenu button, .titlemenu button { padding: 12px 12px; }
+    .pk { padding: 10px 8px; }
+    .pk input { width: 20px; height: 20px; }
   }
   @media print {
     .topbar, .filters, .phtools, #bannerSlot { display: none !important; }
@@ -1089,6 +1138,11 @@ function showTooltip(x, y, build) {
 }
 function hideTooltip() { tooltip.style.display = "none"; }
 addEventListener("scroll", hideTooltip, true);
+// Phones have no hover: a tap shows the tooltip, and a tap anywhere else hides it
+const isTouch = () => matchMedia("(hover: none)").matches;
+document.addEventListener("pointerdown", e => {
+  if (e.pointerType === "touch" && !e.target.closest(".chart-wrap svg, td.cell")) hideTooltip();
+});
 addEventListener("keydown", e => { if (e.key === "Escape") hideTooltip(); });
 
 function ttRow(k, v, color) {
@@ -1176,7 +1230,8 @@ function lineChart({ series, weeks, height = 250, endLabels = false }) {
     svg.append(vline);
     const hit = mk("rect", { x: padL, y: padT, width: Math.max(1, W - padL - padR), height: H - padT - padB, fill: "transparent" });
     hit.style.cursor = "crosshair";
-    hit.addEventListener("pointermove", ev => {
+    hit.style.touchAction = "pan-y";   // phone: slide sideways along the chart to read values, up/down still scrolls
+    const showAt = ev => {
       const rect = svg.getBoundingClientRect();
       const px = ev.clientX - rect.left;
       let best = 0, bd = Infinity;
@@ -1190,8 +1245,13 @@ function lineChart({ series, weeks, height = 250, endLabels = false }) {
           el.append(ttRow(s.name, v == null ? "—" : fmtPct(v) + "%", colors[si]));
         });
       });
+    };
+    hit.addEventListener("pointermove", showAt);
+    hit.addEventListener("pointerdown", showAt);   // a tap on a phone
+    hit.addEventListener("pointerleave", ev => {
+      if (ev.pointerType === "touch") return;      // finger lifted: keep the values showing until the next tap
+      vline.setAttribute("visibility", "hidden"); hideTooltip();
     });
-    hit.addEventListener("pointerleave", () => { vline.setAttribute("visibility", "hidden"); hideTooltip(); });
     svg.append(hit);
     wrap.append(svg);
   }
@@ -1464,10 +1524,18 @@ function openAdjEditor(anchor, brand, week, store, entry) {
     if (JSON.stringify(vals) === initial) return;   // nothing changed — no write
     await saveAdj(brand, week, store, { status: vals[0], remark: vals[1], qtyMissing: vals[2], qtyUpdateLoc: vals[3], qtyCheckIn: vals[4] });
   } };
-  const pw = 300, ph = popover.offsetHeight || 220;
-  const left = Math.min(innerWidth - pw - 10, Math.max(6, r.left));
-  let top = r.bottom + 6;
-  if (top + ph > innerHeight - 8) top = Math.max(6, r.top - ph - 6);
+  // Phones: open as a sheet across the bottom of the screen instead of next to the cell
+  const sheet = innerWidth < 640;
+  popover.classList.toggle("sheet", sheet);
+  popover.style.width = sheet ? (innerWidth - 16) + "px" : "";
+  const pw = sheet ? innerWidth - 16 : 300, ph = popover.offsetHeight || 220;
+  let left, top;
+  if (sheet) { left = 8; top = Math.max(8, innerHeight - ph - 8); }
+  else {
+    left = Math.min(innerWidth - pw - 10, Math.max(6, r.left));
+    top = r.bottom + 6;
+    if (top + ph > innerHeight - 8) top = Math.max(6, r.top - ph - 6);
+  }
   popover.style.left = left + "px"; popover.style.top = top + "px";
   setTimeout(() => { popoverOpen = true; }, 0);   // skip the click that opened it
 }
@@ -1530,7 +1598,15 @@ function renderTabs() {
   const totalFlags = brands.reduce((t, b) => t + buildMatrix(b).rows.filter(r => r.chronicLow).length, 0);
   mkTab("overview", "Overview", totalFlags);
   for (const b of brands) mkTab(b.sheet, b.name, buildMatrix(b).rows.filter(r => r.chronicLow).length);
+  // Phones: bring the open tab into view, and drop the right-edge fade once scrolled to the end
+  requestAnimationFrame(() => {
+    const on = tabsEl.querySelector(".tab.active");
+    if (on && tabsEl.scrollWidth > tabsEl.clientWidth) tabsEl.scrollLeft = on.offsetLeft - (tabsEl.clientWidth - on.offsetWidth) / 2;
+    tabsFade();
+  });
 }
+function tabsFade() { tabsEl.classList.toggle("at-end", tabsEl.scrollLeft + tabsEl.clientWidth >= tabsEl.scrollWidth - 4); }
+tabsEl.addEventListener("scroll", tabsFade, { passive: true });
 
 function renderFilters() {
   filtersEl.textContent = "";
@@ -1751,12 +1827,13 @@ function renderBrand(brand) {
   if (hiddenWeekSerials.length) hiddenNotes.push(hiddenWeekSerials.length + " hidden week(s)");
   frag.append(h("section", { class: "card" },
     h("h2", null, "Weekly cycle count % by store"),
-    h("div", { class: "h2sub" }, "Showing " + periodText() + " (change Period above for older weeks) · hover a cell for count details"
+    h("div", { class: "h2sub" }, "Showing " + periodText() + " (change Period above for older weeks) · " + (isTouch() ? "tap" : "hover") + " a cell for count details"
+      + (isTouch() ? " · swipe the table sideways for older weeks" : "")
       + (canAdj ? " · click a cell to record that week's adjustment · the Adjustment column edits the latest week" : "")
       + (hiddenNotes.length && !state.reorder ? " · " + hiddenNotes.join(" · ") + " — click ✎ to manage" : "")),
     (canReorder && state.reorder) ? h("div", { class: "hiddenbar" }, "Choose what to show:",
       weekPicker(brand), storePicker(brand), h("span", { class: "muted" }, "▲ ▼ next to a store change its position")) : null,
-    h("div", { class: "matrix-scroll" }, table)));
+    h("div", { class: "matrix-scroll weekly" }, table)));
 
   frag.append(h("section", { class: "card" },
     h("h2", null, brand.name + " — average trend"),
@@ -1768,7 +1845,7 @@ function renderBrand(brand) {
 
 function wireCell(td, brand, week, e) {
   td.addEventListener("pointermove", ev => cellTooltip(ev, brand, week, e));
-  td.addEventListener("pointerleave", hideTooltip);
+  td.addEventListener("pointerleave", ev => { if (ev.pointerType !== "touch") hideTooltip(); });
   td.addEventListener("focus", () => {
     const r = td.getBoundingClientRect();
     cellTooltip({ clientX: r.left + r.width / 2, clientY: r.bottom }, brand, week, e);
@@ -2143,6 +2220,10 @@ function renderApp() {
   renderTabs();
   renderFilters();
   hideTooltip();
+  // Remember where the weekly table was scrolled, so a refresh or a save doesn't jump it back to the newest week
+  const oldWk = contentEl.querySelector(".matrix-scroll.weekly");
+  const wkKey = state.country + "|" + state.active;
+  const keepLeft = oldWk && oldWk.dataset.key === wkKey ? oldWk.scrollLeft : null;
   contentEl.textContent = "";
   if (state.view === "settings" && state.user) { contentEl.append(renderSettings()); return; }
   state.view = "dash";
@@ -2161,6 +2242,20 @@ function renderApp() {
   if (!brands.some(b => b.sheet === state.active) && state.active !== "overview") state.active = "overview";
   const brand = brands.find(b => b.sheet === state.active);
   contentEl.append(brand ? renderBrand(brand) : renderOverview());
+  // When the weekly table is wider than the screen (phones), open it at the newest weeks
+  const wk = contentEl.querySelector(".matrix-scroll.weekly");
+  if (wk) {
+    wk.dataset.key = wkKey;
+    if (keepLeft != null) wk.scrollLeft = keepLeft;
+    else {
+      // again once fonts/layout settle (the table can still widen a little), unless the user has scrolled it by then
+      let set = -1;
+      const toEnd = () => { if (set < 0 || wk.scrollLeft === set) { wk.scrollLeft = wk.scrollWidth; set = wk.scrollLeft; } };
+      requestAnimationFrame(toEnd);
+      setTimeout(toEnd, 400);
+      if (document.fonts) document.fonts.ready.then(toEnd);
+    }
+  }
 }
 
 function setUpdated() {
