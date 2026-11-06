@@ -499,8 +499,13 @@
   .in-settings main { padding-top: 24px; }
   .settings-head h2 { font-size: 20px; margin: 0; font-weight: 700; }
   /* Activity log (owner only) */
-  .auditlock { display: grid; gap: 8px; max-width: 360px; }
-  .auditbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
+  .auditlock { display: grid; gap: 16px; max-width: 380px; margin-top: 14px; }
+  .auditlock .hint { font-size: 13px; line-height: 1.6; color: var(--muted); }
+  .auditlock input[type=password] { height: 44px; padding: 0 14px; font-size: 16px; letter-spacing: 2px; }
+  .auditlock button.primary { padding: 10px 22px; }
+  .auditlock .auth-err:empty { display: none; }
+  .auditbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 14px 0 16px; }
+  .roletbl.audittbl th, .roletbl.audittbl td { padding: 12px 14px; line-height: 1.5; }
   .auditbar input[type=search] { flex: 1 1 180px; min-width: 0; }
   .auditbar .count { margin-right: auto; color: var(--muted); font-size: 12.5px; }
   .audittbl td { vertical-align: top; }
@@ -2233,8 +2238,7 @@ function renderAudit() {
     h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
     h("h2", null, "Settings")), settingsTabs() || "");
   const card = h("section", { class: "card" },
-    h("h2", null, "🔒 Activity log"),
-    h("div", { class: "h2sub" }, "Every change made in the dashboard: who, when, and the old and new values. Only you can see this page."));
+    h("h2", null, "🔒 Activity log"));
   frag.append(card);
   if (!isOwner(state.user)) { card.append(h("div", { class: "fatal" }, "Not available.")); return frag; }
 
@@ -2268,7 +2272,7 @@ function renderAudit() {
       }
     };
     card.append(h("form", { class: "auditlock", onsubmit: go },
-      h("div", { class: "h2sub", style: "margin:0" }, "This page is locked. Enter your password to open it. It locks again after 4 minutes or when you leave the page."),
+      h("div", { class: "hint" }, "This page is locked. Enter your password to open it. It locks again after 4 minutes or when you leave the page."),
       pw, h("div", null, btn), err));
     setTimeout(() => pw.focus(), 0);
     return frag;
