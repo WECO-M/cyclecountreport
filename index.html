@@ -707,7 +707,6 @@
         <div class="umenu" id="userMenu" role="menu">
           <button id="btnProfile" role="menuitem" style="display:none">👤 My profile</button>
           <button id="btnSettings" role="menuitem" style="display:none">⚙ Settings</button>
-          <button id="btnAudit" role="menuitem" style="display:none">📜 Activity log</button>
           <button id="btnSignOut" class="sep" role="menuitem" style="display:none">↪ Sign out</button>
         </div>
       </div>
@@ -1731,7 +1730,7 @@ function renderTitle() {
     onclick: ev => { ev.stopPropagation(); menu.classList.toggle("open"); } },
     h("span", { class: "cty" }, cur.id), cur.name, allowed.length > 1 ? h("span", { class: "caret" }, "▼") : null);
   const brand = state.view === "dash" ? activeBrands().find(b => b.sheet === state.active) : null;
-  const where = state.view === "settings" ? (state.settingsTab === "audit" ? "Activity log" : state.settingsTab === "admin" && can("manageUsers") ? "Settings" : "My profile") : brand ? brand.name : "Overview";
+  const where = state.view === "settings" ? (state.settingsTab === "audit" ? "Settings" : state.settingsTab === "admin" && can("manageUsers") ? "Settings" : "My profile") : brand ? brand.name : "Overview";
   box.append(btn, h("span", { class: "crumb" }, "Weekly cycle count · ", h("b", null, where)), menu);
 }
 document.addEventListener("click", () => {
@@ -2092,7 +2091,7 @@ function renderSettings() {
   const frag = document.createDocumentFragment();
   frag.append(h("div", { class: "settings-head" },
     h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
-    h("h2", null, adminTab ? "Settings" : "My profile")));
+    h("h2", null, adminTab ? "Settings" : "My profile")), (adminTab && settingsTabs()) || "");
 
   // ---- Profile ----
   const u = state.user;
@@ -2220,11 +2219,19 @@ const AUDIT_GROUPS = [["", "Everything"], ["adjustment.", "Adjustments"], ["stor
   ["user.", "Users"], ["role.", "Roles"], ["profile.", "Profiles"], ["account.", "Sign-ins & sign-ups"], ["feed.", "Data updates"], ["audit.", "Log access"]];
 const AUDIT_OPEN_MS = 4 * 60 * 1000;
 function auditPretty(s) { if (!s) return "—"; try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return String(s); } }
+// Settings page tabs: the owner also gets "Activity log" next to users & roles.
+function settingsTabs() {
+  if (!isOwner(state.user)) return null;
+  const cur = state.settingsTab === "audit" ? "audit" : "admin";
+  return h("div", { style: "margin:0 0 14px" }, h("span", { class: "seg" }, [["admin", "Users & roles"], ["audit", "🔒 Activity log"]].map(([v, t]) =>
+    h("button", { class: cur === v ? "on" : null, "aria-pressed": cur === v ? "true" : "false",
+      onclick: () => { if (cur !== v) { state.settingsTab = v; renderApp(); } } }, t))));
+}
 function renderAudit() {
   const frag = document.createDocumentFragment();
   frag.append(h("div", { class: "settings-head" },
     h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
-    h("h2", null, "Activity log")));
+    h("h2", null, "Settings")), settingsTabs() || "");
   const card = h("section", { class: "card" },
     h("h2", null, "🔒 Activity log"),
     h("div", { class: "h2sub" }, "Every change made in the dashboard: who, when, and the old and new values. Only you can see this page."));
@@ -2232,7 +2239,7 @@ function renderAudit() {
   if (!isOwner(state.user)) { card.append(h("div", { class: "fatal" }, "Not available.")); return frag; }
 
   if (Date.now() >= (state.auditUntil || 0)) {
-    const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "Your login password" });
+    const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "••••••••" });
     const err = h("div", { class: "auth-err" }, "");
     const btn = h("button", { class: "primary", type: "submit" }, "Unlock");
     const go = async ev => {
@@ -2682,7 +2689,6 @@ function startApp() {
   authRoot.textContent = "";
   document.getElementById("appRoot").style.display = "";
   for (const id of ["btnProfile", "btnSettings", "btnSignOut"]) document.getElementById(id).style.display = state.user ? "" : "none";
-  document.getElementById("btnAudit").style.display = isOwner(state.user) ? "" : "none";
   renderApp();
   ensureCountryData();
 }
@@ -2700,7 +2706,6 @@ function openSettings(tab) {
 }
 document.getElementById("btnProfile").addEventListener("click", () => openSettings("profile"));
 document.getElementById("btnSettings").addEventListener("click", () => openSettings("admin"));
-document.getElementById("btnAudit").addEventListener("click", () => openSettings("audit"));
 document.getElementById("btnSignOut").addEventListener("click", signOutLogged);
 
 // Logo: a count-cycle arrow around a tick, in a round pink-to-light-blue badge.
