@@ -498,6 +498,18 @@
   .in-settings .pagehead, .in-settings #bannerSlot, .in-settings .filters { display: none; }
   .in-settings main { padding-top: 24px; }
   .settings-head h2 { font-size: 20px; margin: 0; font-weight: 700; }
+  /* Activity log (owner only) */
+  .auditlock { display: grid; gap: 8px; max-width: 360px; }
+  .auditbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
+  .auditbar input[type=search] { flex: 1 1 180px; min-width: 0; }
+  .auditbar .count { margin-right: auto; color: var(--muted); font-size: 12.5px; }
+  .audittbl td { vertical-align: top; }
+  .audittbl tr.main { cursor: pointer; }
+  .audittbl .when { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .audittbl .act { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+  .auditdetail { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .auditdetail pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; margin: 4px 0; font-family: ui-monospace, Consolas, monospace; }
+  @media (max-width: 640px) { .auditdetail { grid-template-columns: 1fr; } }
   .roletbl { width: 100%; border-collapse: collapse; }
   .roletbl th, .roletbl td { text-align: left; padding: 10px 10px; border-top: 1px solid var(--grid); font-size: 13.5px; }
   .roletbl tbody tr:hover td { background: var(--surface-2); }
@@ -652,7 +664,7 @@
   /* back-to-top: pill with label on computers, round arrow on phones; shows after scrolling down */
   .totop {
     position: fixed; right: 22px; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 35;
-    display: inline-flex; align-items: center; gap: 7px; height: 44px; padding: 0 16px 0 13px;
+    display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
     border: none; border-radius: 999px; background: var(--accent); color: var(--accent-ink);
     font-weight: 600; font-size: 13.5px; box-shadow: 0 0 0 4px var(--accent-wash), var(--shadow);
     opacity: 0; transform: translateY(10px) scale(.96); pointer-events: none; transition: opacity .2s, transform .2s;
@@ -661,8 +673,7 @@
   .totop:hover { background: var(--accent); filter: brightness(1.1); }
   .totop svg { width: 18px; height: 18px; }
   @media (max-width: 640px) {
-    .totop { right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 46px; height: 46px; padding: 0; justify-content: center; }
-    .totop .lbl { display: none; }
+    .totop { right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 46px; height: 46px; }
   }
   @media (prefers-reduced-motion: reduce) { .totop { transition: none; } }
   @media print {
@@ -696,6 +707,7 @@
         <div class="umenu" id="userMenu" role="menu">
           <button id="btnProfile" role="menuitem" style="display:none">👤 My profile</button>
           <button id="btnSettings" role="menuitem" style="display:none">⚙ Settings</button>
+          <button id="btnAudit" role="menuitem" style="display:none">📜 Activity log</button>
           <button id="btnSignOut" class="sep" role="menuitem" style="display:none">↪ Sign out</button>
         </div>
       </div>
@@ -717,7 +729,7 @@
     <div class="filters" id="filters"></div>
     <main id="content"><div class="loading">Loading cycle count data…</div></main>
   </div>
-  <button id="toTop" class="totop" type="button" title="Back to top" aria-label="Back to top" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg><span class="lbl">Top</span></button>
+  <button id="toTop" class="totop" type="button" title="Back to top" aria-label="Back to top" tabindex="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg></button>
 </div>
 <div id="tooltip" role="status"></div>
 <div id="popover"></div>
@@ -1381,6 +1393,53 @@ function adjErrBanner(prefix, e) {
   bannerSlot.textContent = "";
   bannerSlot.append(h("div", { class: "banner", role: "alert" }, prefix + ": " + ((e && e.message) || e)));
 }
+/* ---- Activity log: every change is saved in one batch with an append-only auditLog entry (only the owner reads it).
+   The rules refuse a change without its entry: the change carries the entry's id as logId, and a delete needs the
+   entry del_<collection>_<doc>_<the doc's logId>. Same entry shape as the Store Transfer dashboard. ---- */
+const AUDIT_HIDE = /pass|pw|token|secret/i;
+function auditJson(v) {
+  if (v === undefined || v === null) return "";
+  const s = JSON.stringify(v, (k, x) => (AUDIT_HIDE.test(k) || k === "logId" || k === "updatedAt") ? undefined : (x && typeof x.toDate === "function" ? x.toDate().toISOString() : x));
+  return s.length > 15000 ? s.slice(0, 15000) + "…(truncated)" : s;
+}
+function auditEntry(action, target, id, summary, before, after) {
+  const u = auth.currentUser;
+  return { at: firebase.firestore.FieldValue.serverTimestamp(), actor: u.email || "", uid: u.uid,
+    action, target: target || "", id: id || "", summary: summary || "", before: auditJson(before), after: auditJson(after) };
+}
+// op: "set" | "update" | "delete". Returns what was saved (with its logId), so callers keep it for the next change.
+async function writeLogged(action, op, coll, id, data, before, summary) {
+  const ref = db.collection(coll).doc(id);
+  const run = async prev => {
+    const b = db.batch();
+    let saved = null;
+    if (op === "delete") {
+      b.delete(ref);
+      b.set(db.collection("auditLog").doc("del_" + coll + "_" + id + "_" + ((prev && prev.logId) || "legacy")), auditEntry(action, coll, id, summary, prev, null));
+    } else {
+      const logRef = db.collection("auditLog").doc();
+      saved = Object.assign({}, data, { logId: logRef.id });
+      b[op](ref, saved);
+      // an update logs only the old values of the fields it changes
+      const shown = op === "update" && prev ? Object.fromEntries(Object.keys(data).map(k => [k, prev[k] === undefined ? null : prev[k]])) : prev;
+      b.set(logRef, auditEntry(action, coll, id, summary, shown, data));
+    }
+    await b.commit();
+    return saved;
+  };
+  try { return await run(before); }
+  catch (e) {
+    // A delete names the doc's current logId; if someone else changed it meanwhile, read it fresh and try once more.
+    if (op !== "delete" || !e || e.code !== "permission-denied") throw e;
+    const snap = await ref.get();
+    return snap.exists ? run(snap.data()) : null;
+  }
+}
+function logEvent(action, summary) {   // sign-in, sign-out, log unlocks: nothing saved alongside
+  if (!db || !auth || !auth.currentUser) return Promise.resolve();
+  return db.collection("auditLog").add(auditEntry(action, "", "", summary, null, null)).catch(() => {});
+}
+
 async function saveAdj(brand, week, store, patch) {
   const id = adjDocId(brand, store, week.serial);
   const cur = getAdj(brand, store, week.serial) || {};
@@ -1395,10 +1454,13 @@ async function saveAdj(brand, week, store, patch) {
     updatedBy: state.user.email, updatedByName: state.user.name || "",
     updatedAt: new Date().toISOString(),
   };
-  const ref = db.collection("adjustments").doc(id);
   const m = state.adj[state.country] = state.adj[state.country] || {};
-  if (!next.status && !next.remark && !next.qtyMissing && !next.qtyUpdateLoc && !next.qtyCheckIn) { await ref.delete(); delete m[id]; }
-  else { await ref.set(next); m[id] = next; }
+  const summary = state.country + " · " + brand.sheet + " · " + store + " · " + week.full;
+  if (!next.status && !next.remark && !next.qtyMissing && !next.qtyUpdateLoc && !next.qtyCheckIn) {
+    if (m[id]) await writeLogged("adjustment.clear", "delete", "adjustments", id, null, m[id], summary);
+    delete m[id];
+  }
+  else m[id] = await writeLogged("adjustment.save", "set", "adjustments", id, next, m[id] || null, summary);
   renderApp();
   // If the editor popup is open for this same store & week, refresh it in place
   if (popoverOpen && popCtx && popCtx.brand.sheet === brand.sheet && popCtx.store === store
@@ -1446,9 +1508,9 @@ async function saveOrderRec(brand, patch) {
     updatedAt: new Date().toISOString(),
   };
   try {
-    await db.collection("storeOrders").doc(id).set(rec);
+    const saved = await writeLogged("store.layout", "set", "storeOrders", id, rec, getOrderRec(brand), state.country + " · " + brand.sheet);
     const m = state.order[state.country] = state.order[state.country] || {};
-    m[id] = rec;
+    m[id] = saved;
     renderApp();
   } catch (e) { adjErrBanner("Could not save the store list", e); }
 }
@@ -1486,9 +1548,8 @@ async function saveHiddenWeeks(hiddenWeeks) {   // whole list at once, e.g. [] t
     updatedAt: new Date().toISOString(),
   };
   try {
-    await db.collection("storeOrders").doc(id).set(rec);
     const m = state.order[state.country] = state.order[state.country] || {};
-    m[id] = rec;
+    m[id] = await writeLogged("weeks.hidden", "set", "storeOrders", id, rec, m[id] || null, state.country + " · hidden weeks");
     renderApp();
   } catch (e) { adjErrBanner("Could not save the hidden weeks", e); }
 }
@@ -1670,7 +1731,7 @@ function renderTitle() {
     onclick: ev => { ev.stopPropagation(); menu.classList.toggle("open"); } },
     h("span", { class: "cty" }, cur.id), cur.name, allowed.length > 1 ? h("span", { class: "caret" }, "▼") : null);
   const brand = state.view === "dash" ? activeBrands().find(b => b.sheet === state.active) : null;
-  const where = state.view === "settings" ? (state.settingsTab === "admin" && can("manageUsers") ? "Settings" : "My profile") : brand ? brand.name : "Overview";
+  const where = state.view === "settings" ? (state.settingsTab === "audit" ? "Activity log" : state.settingsTab === "admin" && can("manageUsers") ? "Settings" : "My profile") : brand ? brand.name : "Overview";
   box.append(btn, h("span", { class: "crumb" }, "Weekly cycle count · ", h("b", null, where)), menu);
 }
 document.addEventListener("click", () => {
@@ -2026,6 +2087,7 @@ function renderOverview() {
 /* ============================== RENDER: SETTINGS ============================== */
 function renderSettings() {
   // Two pages from the user menu: "My profile" (your own details) and "Settings" (users & roles, managers only)
+  if (state.settingsTab === "audit") return renderAudit();
   const adminTab = state.settingsTab === "admin" && can("manageUsers");
   const frag = document.createDocumentFragment();
   frag.append(h("div", { class: "settings-head" },
@@ -2062,7 +2124,7 @@ function renderSettings() {
         h("button", { class: "primary", onclick: async ev => {
           const btn = ev.target; btn.disabled = true;
           try {
-            await db.collection("users").doc(u.uid).update({ name: nameInput.value.trim(), color: colorPick });
+            await writeLogged("profile.save", "update", "users", u.uid, { name: nameInput.value.trim(), color: colorPick }, u, u.email);
             state.user.name = nameInput.value.trim();
             state.user.color = colorPick;
             renderUserChip();
@@ -2072,11 +2134,11 @@ function renderSettings() {
         } }, "Save profile"),
         h("button", { onclick: async ev => {
           const btn = ev.target; btn.disabled = true;
-          try { await auth.sendPasswordResetEmail(u.email); profMsg.textContent = "Password reset email sent to " + u.email + "."; }
+          try { await auth.sendPasswordResetEmail(u.email); logEvent("account.passwordReset", u.email); profMsg.textContent = "Password reset email sent to " + u.email + "."; }
           catch (e) { profMsg.textContent = "Could not send: " + e.message; profMsg.className = "auth-err"; }
           btn.disabled = false;
         } }, "Change password (email link)"),
-        h("button", { style: "margin-left:auto", onclick: async () => { if (auth) await auth.signOut(); } }, "↪ Sign out")),
+        h("button", { style: "margin-left:auto", onclick: signOutLogged }, "↪ Sign out")),
       profMsg)));
 
   // ---- User Management (requires manage-users permission) ----
@@ -2100,12 +2162,13 @@ function renderSettings() {
         const roleTxt = roleName(row.role);
         const badgeCls = row.role === "admin" ? "admin" : (!row.role || row.role === "pending" || !roleInfo(row.role) ? "pending" : "executive");
         const status = h("td", null);
+        if (isOwner(row)) status.append(h("span", { class: "pill p-active", title: "Owner account — always full access, can't be changed or removed" }, "🔒 Owner"));
         if (row.locked) status.append(h("span", { class: "pill p-locked" }, "Locked"));
         status.append(h("span", { class: "pill " + (row.active === false ? "p-inactive" : "p-active") }, row.active === false ? "Inactive" : "Active"));
         const access = (row.countries || []).join(", ") + " · " +
           (row.allBrands !== false ? "All brands" : ((row.brands || []).map(b => BRAND_NAMES[b] || b).join(", ") || "No brands"));
         tb.append(h("tr", null,
-          h("td", null, h("button", { class: "editbtn", title: "Edit user", onclick: () => openUserEditor(uid, row) }, "✎")),
+          h("td", null, h("button", { class: "editbtn", title: isOwner(row) ? "View owner account (locked)" : "Edit user", onclick: () => openUserEditor(uid, row) }, isOwner(row) ? "🔒" : "✎")),
           h("td", { style: "white-space:nowrap" }, avatarEl(row, "sm"), row.name || "—", uid === state.user.uid ? " (you)" : ""),
           h("td", null, row.email || uid),
           h("td", null, h("span", { class: "rolebadge " + badgeCls }, roleTxt)),
@@ -2151,6 +2214,93 @@ function renderSettings() {
   return frag;
 }
 
+/* ---- Activity log page: owner only. Opening it needs your login password again; the rules also require a
+   sign-in within the last 5 minutes, so it locks again after 4 minutes, on "Lock now" or when you leave it. ---- */
+const AUDIT_GROUPS = [["", "Everything"], ["adjustment.", "Adjustments"], ["store.", "Store list"], ["weeks.", "Hidden weeks"],
+  ["user.", "Users"], ["role.", "Roles"], ["profile.", "Profiles"], ["account.", "Sign-ins & sign-ups"], ["feed.", "Data updates"], ["audit.", "Log access"]];
+const AUDIT_OPEN_MS = 4 * 60 * 1000;
+function auditPretty(s) { if (!s) return "—"; try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return String(s); } }
+function renderAudit() {
+  const frag = document.createDocumentFragment();
+  frag.append(h("div", { class: "settings-head" },
+    h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
+    h("h2", null, "Activity log")));
+  const card = h("section", { class: "card" },
+    h("h2", null, "🔒 Activity log"),
+    h("div", { class: "h2sub" }, "Every change made in the dashboard: who, when, and the old and new values. Only you can see this page."));
+  frag.append(card);
+  if (!isOwner(state.user)) { card.append(h("div", { class: "fatal" }, "Not available.")); return frag; }
+
+  if (Date.now() >= (state.auditUntil || 0)) {
+    const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "Your login password" });
+    const err = h("div", { class: "auth-err" }, "");
+    const btn = h("button", { class: "primary", type: "submit" }, "Unlock");
+    const go = async ev => {
+      ev.preventDefault();
+      err.textContent = "";
+      if (!pw.value) { err.textContent = "Enter your password."; return; }
+      btn.disabled = true;
+      try {
+        const u = auth.currentUser;
+        await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, pw.value));
+        pw.value = "";
+        await u.getIdToken(true);
+        const snap = await db.collection("auditLog").orderBy("at", "desc").limit(500).get();
+        state.audit = snap.docs.map(d => Object.assign({ _id: d.id }, d.data()));
+        state.auditUntil = Date.now() + AUDIT_OPEN_MS;
+        logEvent("audit.open");
+        clearTimeout(state.auditTimer);
+        state.auditTimer = setTimeout(() => { if (state.view === "settings" && state.settingsTab === "audit") renderApp(); }, AUDIT_OPEN_MS + 500);
+        renderApp();
+      } catch (e) {
+        pw.value = ""; btn.disabled = false;
+        const code = (e && (e.code || e.message)) || "";
+        if (/wrong-password|invalid-credential|invalid-login/.test(code)) { err.textContent = "That password is not right."; logEvent("audit.wrongPassword"); }
+        else err.textContent = /too-many/.test(code) ? "Too many attempts. Wait a few minutes and try again." : ((e && e.message) || String(e));
+        pw.focus();
+      }
+    };
+    card.append(h("form", { class: "auditlock", onsubmit: go },
+      h("div", { class: "h2sub", style: "margin:0" }, "This page is locked. Enter your password to open it. It locks again after 4 minutes or when you leave the page."),
+      pw, h("div", null, btn), err));
+    setTimeout(() => pw.focus(), 0);
+    return frag;
+  }
+
+  const rows = state.audit || [];
+  let group = "", q = "";
+  const tb = h("tbody");
+  const count = h("span", { class: "count" });
+  const when = ts => { const d = ts && typeof ts.toDate === "function" ? ts.toDate() : null;
+    return d ? d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"; };
+  const draw = () => {
+    const f = rows.filter(r => (!group || (r.action || "").startsWith(group))
+      && (!q || [r.actor, r.action, r.target, r.id, r.summary].join(" ").toLowerCase().includes(q)));
+    tb.textContent = "";
+    for (const r of f) {
+      const detail = h("tr", { style: "display:none" }, h("td", { colspan: "5" }, h("div", { class: "auditdetail" },
+        h("div", null, h("b", null, "Before"), h("pre", null, auditPretty(r.before))),
+        h("div", null, h("b", null, "After"), h("pre", null, auditPretty(r.after))))));
+      tb.append(h("tr", { class: "main", title: "Show the old and new values", onclick: () => { detail.style.display = detail.style.display === "none" ? "" : "none"; } },
+        h("td", { class: "when" }, when(r.at)),
+        h("td", null, r.actor || "—"),
+        h("td", { class: "act" }, r.action || ""),
+        h("td", null, r.summary || ((r.target || "") + (r.id ? "/" + r.id : ""))),
+        h("td", { class: "act" }, r.target ? r.target + (r.id ? "/" + r.id : "") : "")), detail);
+    }
+    if (!f.length) tb.append(h("tr", null, h("td", { colspan: "5" }, rows.length ? "No entries match." : "No activity recorded yet.")));
+    count.textContent = f.length + " of " + rows.length + " entries (latest 500)";
+  };
+  const sel = h("select", { onchange: e => { group = e.target.value; draw(); } }, AUDIT_GROUPS.map(([v, t]) => h("option", { value: v }, t)));
+  const search = h("input", { type: "search", placeholder: "Search who, what, store…", oninput: e => { q = e.target.value.trim().toLowerCase(); draw(); } });
+  card.append(h("div", { class: "auditbar" }, count, sel, search,
+    h("button", { onclick: () => { state.auditUntil = 0; state.audit = null; renderApp(); } }, "🔒 Lock now")));
+  card.append(h("div", { class: "matrix-scroll" }, h("table", { class: "roletbl audittbl" },
+    h("thead", null, h("tr", null, h("th", null, "When"), h("th", null, "Who"), h("th", null, "Action"), h("th", null, "What"), h("th", null, "Item"))), tb)));
+  draw();
+  return frag;
+}
+
 function slugifyRole(name) {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
@@ -2175,7 +2325,7 @@ function openRoleEditor(roleId, data) {
     if (!delArmed) { delArmed = true; ev.target.textContent = "Really delete?"; return; }
     ev.target.disabled = true;
     try {
-      await db.collection("roles").doc(roleId).delete();
+      await writeLogged("role.delete", "delete", "roles", roleId, null, state.roles[roleId], data.name || roleId);
       delete state.roles[roleId];
       close();
       renderApp();
@@ -2211,8 +2361,7 @@ function openRoleEditor(roleId, data) {
           updatedBy: state.user.email, updatedAt: new Date().toISOString(),
         };
         try {
-          await db.collection("roles").doc(id).set(doc);
-          state.roles[id] = doc;
+          state.roles[id] = await writeLogged(isNew ? "role.create" : "role.update", "set", "roles", id, doc, isNew ? null : state.roles[id], name);
           close();
           renderApp();
         } catch (e2) { err.textContent = "Could not save: " + ((e2 && e2.message) || e2); ev.target.disabled = false; }
@@ -2230,8 +2379,11 @@ function mkSwitch(checked, disabled, title) {
 
 function openUserEditor(uid, row) {
   const isSelf = uid === state.user.uid;
-  const guarded = isSelf || (row.role === "admin" && state.user.role !== "admin");
-  const selfNote = isSelf ? "You can't change this on your own account"
+  // The owner's profile is locked for everyone (the owner included); name and colour are changed in My profile.
+  const ownerRow = isOwner(row);
+  const guarded = ownerRow || isSelf || (row.role === "admin" && state.user.role !== "admin");
+  const selfNote = ownerRow ? "The owner account is locked and can't be changed here"
+    : isSelf ? "You can't change this on your own account"
     : guarded ? "Only an Administrator can change another Administrator" : null;
   const BRAND_IDS = Object.keys(BRAND_NAMES);
 
@@ -2296,7 +2448,7 @@ function openUserEditor(uid, row) {
             patch.locked = lockedSw.input.checked;
             patch.active = activeSw.input.checked;
           }
-          await db.collection("users").doc(uid).update(patch);
+          await writeLogged("user.update", "update", "users", uid, patch, row, row.email || uid);
           if (isSelf) Object.assign(state.user, patch);
           close();
           renderApp();   // re-renders the settings view with fresh data
@@ -2308,6 +2460,13 @@ function openUserEditor(uid, row) {
   addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); removeEventListener("keydown", esc); } });
   document.body.append(overlay, drawer);
   syncBrandGrid();
+  if (ownerRow) {
+    drawer.querySelectorAll("input, select").forEach(el => { el.disabled = true; el.title = selfNote; });
+    drawer.querySelector(".dsub").textContent = "🔒 Owner account — locked. Full access always; nobody can change or remove it."
+      + (isSelf ? " Change your name and colour in My profile." : "");
+    drawer.querySelector(".actions .primary").remove();
+    drawer.querySelector(".actions button").textContent = "Close";
+  }
 }
 
 /* ============================== APP RENDER + REFRESH ============================== */
@@ -2367,6 +2526,8 @@ addEventListener("keydown", e => { if (e.key === "Escape") closeUserMenu(); });
 function renderApp() {
   // My profile / Settings pages: hide the dashboard's header (country, "Updated…", data source, Refresh)
   document.body.classList.toggle("in-settings", state.view === "settings" && !!state.user);
+  // The activity log locks again as soon as you leave it.
+  if (!(state.view === "settings" && state.settingsTab === "audit")) { state.auditUntil = 0; state.audit = null; }
   renderUserChip();
   renderTitle();
   renderTabs();
@@ -2521,8 +2682,15 @@ function startApp() {
   authRoot.textContent = "";
   document.getElementById("appRoot").style.display = "";
   for (const id of ["btnProfile", "btnSettings", "btnSignOut"]) document.getElementById(id).style.display = state.user ? "" : "none";
+  document.getElementById("btnAudit").style.display = isOwner(state.user) ? "" : "none";
   renderApp();
   ensureCountryData();
+}
+async function signOutLogged() {
+  await logEvent("account.signout");
+  try { sessionStorage.removeItem("cc.signedIn"); } catch (_) {}
+  state.auditUntil = 0; state.audit = null;
+  if (auth) await auth.signOut();
 }
 function openSettings(tab) {
   closeUserMenu();
@@ -2532,9 +2700,8 @@ function openSettings(tab) {
 }
 document.getElementById("btnProfile").addEventListener("click", () => openSettings("profile"));
 document.getElementById("btnSettings").addEventListener("click", () => openSettings("admin"));
-document.getElementById("btnSignOut").addEventListener("click", async () => {
-  if (auth) await auth.signOut();
-});
+document.getElementById("btnAudit").addEventListener("click", () => openSettings("audit"));
+document.getElementById("btnSignOut").addEventListener("click", signOutLogged);
 
 // Logo: a count-cycle arrow around a tick, in a round pink-to-light-blue badge.
 const MARK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18.6 9.2A7 7 0 1 0 19 12"/><path d="M19.4 5.2v4.2h-4.2"/><path d="M9.2 12.2l2 2 3.8-4"/></svg>';
@@ -2678,7 +2845,7 @@ function showVerify(user) {
     msg,
     h("div", { class: "auth-links" },
       h("a", { href: "#", onclick: async e => { e.preventDefault(); try { await user.sendEmailVerification(); msg.className = "auth-ok"; msg.textContent = "Verification email re-sent."; } catch (er) { msg.className = "auth-err"; msg.textContent = friendlyAuthError(er); } } }, "Resend email"),
-      h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+      h("a", { href: "#", onclick: e => { e.preventDefault(); signOutLogged(); } }, "Sign out")),
   );
 }
 
@@ -2688,7 +2855,7 @@ function showPending(prof) {
     h("div", { class: "asub" }, "Signed in as " + prof.email),
     h("div", { class: "auth-note" }, "Your account is verified but not yet approved. An Administrator needs to assign you a role in Settings → Roles before you can view the reports."),
     h("button", { class: "abtn", onclick: () => location.reload() }, "Check again"),
-    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); signOutLogged(); } }, "Sign out")),
   );
 }
 
@@ -2699,7 +2866,7 @@ function showBlocked(kind, prof) {
     h("div", { class: "auth-note" }, kind === "locked"
       ? "Your account has been locked by an Administrator. Contact them if you believe this is a mistake."
       : "Your account is currently inactive. An Administrator can reactivate it in Settings → User Management."),
-    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); auth.signOut(); } }, "Sign out")),
+    h("div", { class: "auth-links" }, h("a", { href: "#", onclick: e => { e.preventDefault(); signOutLogged(); } }, "Sign out")),
   );
 }
 
@@ -2724,8 +2891,8 @@ async function ensureProfile(user) {
     active: true, locked: false,
     created: new Date().toISOString(),
   };
-  await ref.set(prof);
-  return Object.assign({ uid: user.uid }, prof);
+  const saved = await writeLogged("account.signup", "set", "users", user.uid, prof, null, user.email);
+  return Object.assign({ uid: user.uid }, saved);
 }
 
 async function route(user) {
@@ -2735,17 +2902,22 @@ async function route(user) {
     await user.getIdToken(true);   // refresh token so email_verified is current in security rules
     const prof = await ensureProfile(user);
     try { await loadRoles(); } catch (_) { state.roles = {}; }
+    // Owner lock: the owner login always gets full Administrator access, whatever its profile says (the rules match).
+    if (isOwner(user)) Object.assign(prof, { role: "admin", countries: COUNTRIES.map(c => c.id), locked: false, active: true });
     if (prof.locked) { state.user = null; showBlocked("locked", prof); return; }
     if (prof.active === false) { state.user = null; showBlocked("inactive", prof); return; }
     const ri = roleInfo(prof.role);
     if (!prof.role || prof.role === "pending" || !ri || ri.active === false) { state.user = null; showPending(prof); return; }
     state.user = prof;
     startApp();
+    // one "signed in" log entry per browser tab session
+    let seen = null; try { seen = sessionStorage.getItem("cc.signedIn"); } catch (_) {}
+    if (seen !== user.uid) { try { sessionStorage.setItem("cc.signedIn", user.uid); } catch (_) {} logEvent("account.signin"); }
   } catch (e) {
     authCard(h("h1", null, "Something went wrong"),
       h("div", { class: "auth-err" }, friendlyAuthError(e)),
       h("button", { class: "abtn", onclick: () => location.reload() }, "Reload"),
-      h("div", { class: "auth-links" }, h("a", { href: "#", onclick: ev => { ev.preventDefault(); auth.signOut(); } }, "Sign out")));
+      h("div", { class: "auth-links" }, h("a", { href: "#", onclick: ev => { ev.preventDefault(); signOutLogged(); } }, "Sign out")));
   }
 }
 
