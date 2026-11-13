@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Cycle Count">
-<title>cyclecountreport_sg</title>
+<title>Cycle Count Report</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23e27ba3'/%3E%3Cstop offset='.5' stop-color='%23c49ad4'/%3E%3Cstop offset='1' stop-color='%238db9ec'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='32' fill='url(%23g)'/%3E%3Cpath d='M50 26A19 19 0 1 0 51 33M52 14v12H40M24 33l6 6 11-12' fill='none' stroke='white' stroke-width='5.5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1738,7 +1738,7 @@ function renderTitle() {
   const box = document.getElementById("titleBox");
   box.textContent = "";
   const cur = country();
-  document.title = "cyclecountreport_" + cur.id.toLowerCase();
+  document.title = "Cycle Count Report";
   const sheetA = document.getElementById("sheetA");
   if (sheetA) sheetA.href = "https://docs.google.com/spreadsheets/d/" + cur.sheetId + "/edit";
   const menu = h("div", { class: "titlemenu" });
