@@ -1253,7 +1253,7 @@ function parseBrandRows(rows) {
       status: cells.B ? cells.B.s : "",
       countDate: disp(cells.C),
       parts,
-      pct: parts.length ? parts.reduce((x, y) => x + y, 0) / parts.length : null,
+      pct: parts.length ? Math.max(...parts) : null,   // highest of the parts (was the average until 16 Nov 2026)
       missing: disp(cells.G),
       updateLoc: disp(cells.H),
       checkIn: disp(cells.I),
@@ -1321,7 +1321,7 @@ async function loadBq(countryId) {
           const parts = s.parts.filter(p => p != null);
           return {
             store: s.store, status: "", countDate: s.countDate, parts,
-            pct: parts.length ? parts.reduce((x, y) => x + y, 0) / parts.length : null,
+            pct: parts.length ? Math.max(...parts) : null,   // highest of the parts (was the average until 16 Nov 2026)
             missing: "", updateLoc: "", checkIn: "", remark: "",
             est: !!s.est,                                   // from the per-scan table — count may still be in progress
           };
