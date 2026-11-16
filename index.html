@@ -721,6 +721,7 @@
         <div class="umenu" id="userMenu" role="menu">
           <button id="btnProfile" role="menuitem" style="display:none">👤 My profile</button>
           <button id="btnSettings" role="menuitem" style="display:none">⚙ Settings</button>
+          <button id="btnAudit" role="menuitem" style="display:none">🔒 Activity log</button>
           <button id="btnSignOut" class="sep" role="menuitem" style="display:none">↪ Sign out</button>
         </div>
       </div>
@@ -1662,7 +1663,7 @@ function openAdjEditor(anchor, brand, week, store, entry) {
     if (entry.parts && entry.parts.length > 1) info.push(["Parts 1–" + entry.parts.length, entry.parts.map(p => fmtPct(p)).join(" / ")]);
     if (entry.status) info.push(["Status", entry.status]);
     if (entry.countDate) info.push(["Counted", entry.countDate]);
-    if (entry.missing) info.push(["Missing (check out)", entry.missing]);
+    if (entry.missing) info.push(["Check out (missing)", entry.missing]);
     if (entry.updateLoc) info.push(["Update location", entry.updateLoc]);
     if (entry.checkIn) info.push(["Check in", entry.checkIn]);
     if (entry.remark) info.push(["Remark", entry.remark]);
@@ -1677,7 +1678,7 @@ function openAdjEditor(anchor, brand, week, store, entry) {
   qCheckIn.value = cur.qtyCheckIn != null ? cur.qtyCheckIn : "";
   popover.append(
     h("div", null, "Adjustment status ", sel),
-    h("div", { class: "qrow" }, h("label", null, "Missing (Check Out)"), qMissing),
+    h("div", { class: "qrow" }, h("label", null, "Check Out (Missing)"), qMissing),
     h("div", { class: "qrow" }, h("label", null, "Update Location"), qUpdate),
     h("div", { class: "qrow" }, h("label", null, "Check In"), qCheckIn),
     ta);
@@ -1871,7 +1872,7 @@ function cellTooltip(ev, brand, week, e) {
     if (e.parts.length > 1) el.append(ttRow("Parts 1–" + e.parts.length, e.parts.map(p => fmtPct(p)).join(" / ")));
     if (e.status) el.append(ttRow("Status", e.status));
     if (e.countDate) el.append(ttRow("Counted", e.countDate));
-    if (e.missing) el.append(ttRow("Missing (check out)", e.missing));
+    if (e.missing) el.append(ttRow("Check out (missing)", e.missing));
     if (e.updateLoc) el.append(ttRow("Update location", e.updateLoc));
     if (e.checkIn) el.append(ttRow("Check in", e.checkIn));
     if (e.remark) el.append(ttRow("Remark", e.remark));
@@ -1881,7 +1882,7 @@ function cellTooltip(ev, brand, week, e) {
       const adj = getAdj(brand, e.store, week.serial);
       if (adj && (adj.status || adj.remark || adj.qtyMissing || adj.qtyUpdateLoc || adj.qtyCheckIn)) {
         el.append(ttRow("Adjustment", ADJ_LABEL[adj.status] || "—"));
-        if (adj.qtyMissing) el.append(ttRow("Adj. missing (check out)", adj.qtyMissing));
+        if (adj.qtyMissing) el.append(ttRow("Adj. check out (missing)", adj.qtyMissing));
         if (adj.qtyUpdateLoc) el.append(ttRow("Adj. update location", adj.qtyUpdateLoc));
         if (adj.qtyCheckIn) el.append(ttRow("Adj. check in", adj.qtyCheckIn));
         if (adj.remark) el.append(ttRow("Adj. remark", adj.remark));
@@ -2259,13 +2260,14 @@ function settingsTabs() {
 }
 function renderAudit() {
   const frag = document.createDocumentFragment();
+  const logOnly = !!(state.user && state.user.logOnly);   // a listed viewer with no dashboard role yet: the log is all they get
   frag.append(h("div", { class: "settings-head" },
-    h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
-    h("h2", null, "Settings")), settingsTabs() || "");
+    logOnly ? "" : h("button", { onclick: () => { state.view = "dash"; renderApp(); } }, "← Back to dashboard"),
+    h("h2", null, isOwner(state.user) ? "Settings" : "Activity log")), settingsTabs() || "");
   const card = h("section", { class: "card" },
-    h("h2", null, "🔒 Activity log"));
+    h("h2", null, "🔒 Activity log" + (isOwner(state.user) ? "" : " (view only)")));
   frag.append(card);
-  if (!isOwner(state.user)) { card.append(h("div", { class: "fatal" }, "Not available.")); return frag; }
+  if (!canSeeLog(state.user)) { card.append(h("div", { class: "fatal" }, "Not available.")); return frag; }
 
   if (Date.now() >= (state.auditUntil || 0)) {
     const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "••••••••" });
@@ -2297,7 +2299,7 @@ function renderAudit() {
       }
     };
     card.append(h("form", { class: "auditlock", onsubmit: go },
-      h("div", { class: "hint" }, "This page is locked. Enter your password to open it. It locks again after 4 minutes or when you leave the page."),
+      h("div", { class: "hint" }, "This page is locked. Enter the same password you use to sign in to this dashboard to open it. It locks again after 4 minutes or when you leave the page."),
       pwField(pw), h("div", null, btn), err));
     setTimeout(() => pw.focus(), 0);
     return frag;
@@ -2517,6 +2519,13 @@ const userMenu = document.getElementById("userMenu");
 const AV_COLORS = ["#4f46e5", "#0f766e", "#be185d", "#b45309", "#0369a1", "#7c3aed"];
 const AV_OWNER = "linear-gradient(135deg, #e27ba3 0%, #c49ad4 50%, #8db9ec 100%)";   // the logo colours, owner account only
 const isOwner = u => !!u && String(u.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
+// Activity log readers: the owner, plus logins the owner has listed in Firestore logViewers/{email} (view only).
+// The rules check the same list, so this flag only decides what the page shows.
+const canSeeLog = u => isOwner(u) || !!(u && u.logViewer);
+async function isLogViewer(user) {
+  try { const s = await db.collection("logViewers").doc(String(user.email || "").toLowerCase()).get(); return s.exists; }
+  catch (_) { return false; }
+}
 // Two or more words: first letter of the first two. One word: its first two letters. Symbols are ignored; no name → email.
 function initialsOf(u) {
   const pick = s => {
@@ -2544,6 +2553,8 @@ function renderUserChip() {
   const nm = state.user.name || state.user.email || "";
   // Settings (users & roles) only for people who can manage them; everyone has My profile
   document.getElementById("btnSettings").style.display = can("manageUsers") ? "" : "none";
+  // listed viewers get a menu entry; the owner reaches the log through Settings
+  document.getElementById("btnAudit").style.display = canSeeLog(state.user) && !isOwner(state.user) ? "" : "none";
   userChip.textContent = "";
   userChip.append(avatarEl(state.user),
     h("span", { class: "who" }, h("b", null, nm), h("span", null, roleName(state.user.role))),
@@ -2560,6 +2571,8 @@ document.addEventListener("click", ev => { if (!userWrap.contains(ev.target)) cl
 addEventListener("keydown", e => { if (e.key === "Escape") closeUserMenu(); });
 
 function renderApp() {
+  // A listed log viewer without a dashboard role only ever sees the activity log (or My profile)
+  if (state.user && state.user.logOnly && state.view !== "settings") { state.view = "settings"; state.settingsTab = "audit"; }
   // My profile / Settings pages: hide the dashboard's header (country, "Updated…", data source, Refresh)
   document.body.classList.toggle("in-settings", state.view === "settings" && !!state.user);
   // The activity log locks again as soon as you leave it.
@@ -2625,6 +2638,7 @@ function setUpdated() {
 }
 
 async function refresh(first) {
+  if (state.user && state.user.logOnly) { hideBoot(); return; }   // no dashboard data for a log-only viewer
   if (state.refreshing) return;
   state.refreshing = true;
   document.body.classList.add("refreshing");
@@ -2719,7 +2733,7 @@ function startApp() {
   document.getElementById("appRoot").style.display = "";
   for (const id of ["btnProfile", "btnSettings", "btnSignOut"]) document.getElementById(id).style.display = state.user ? "" : "none";
   renderApp();
-  ensureCountryData();
+  if (!(state.user && state.user.logOnly)) ensureCountryData();
 }
 async function signOutLogged() {
   await logEvent("account.signout");
@@ -2735,6 +2749,7 @@ function openSettings(tab) {
 }
 document.getElementById("btnProfile").addEventListener("click", () => openSettings("profile"));
 document.getElementById("btnSettings").addEventListener("click", () => openSettings("admin"));
+document.getElementById("btnAudit").addEventListener("click", () => openSettings("audit"));
 document.getElementById("btnSignOut").addEventListener("click", signOutLogged);
 
 // Logo: a count-cycle arrow around a tick, in a round pink-to-light-blue badge.
@@ -2941,7 +2956,12 @@ async function route(user) {
     if (prof.locked) { state.user = null; showBlocked("locked", prof); return; }
     if (prof.active === false) { state.user = null; showBlocked("inactive", prof); return; }
     const ri = roleInfo(prof.role);
-    if (!prof.role || prof.role === "pending" || !ri || ri.active === false) { state.user = null; showPending(prof); return; }
+    prof.logViewer = !isOwner(user) && await isLogViewer(user);
+    if (!prof.role || prof.role === "pending" || !ri || ri.active === false) {
+      // not approved for the dashboard yet: a listed log viewer still gets the activity log, nothing else
+      if (!prof.logViewer) { state.user = null; showPending(prof); return; }
+      prof.logOnly = true;
+    }
     state.user = prof;
     startApp();
     // one "signed in" log entry per browser tab session
