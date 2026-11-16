@@ -2743,6 +2743,29 @@ function openUserEditor(uid, row) {
   const close = () => { overlay.remove(); drawer.remove(); };
   overlay.addEventListener("click", close);
 
+  // Delete: removes this person's profile (their access ends at once) and any unused registration for the same email.
+  // Only the owner account can delete users (the rules refuse everyone else, other Administrators included),
+  // and never its own profile.
+  let delArmed = false;
+  const delBtn = (!isOwner(state.user) || guarded) ? null : h("button", { type: "button", title: "Remove this user's profile and access", onclick: async ev => {
+    if (!delArmed) {
+      delArmed = true; ev.target.textContent = "Really delete " + (row.name || row.email || "this user") + "?";
+      err.textContent = "This removes their profile and all access. If they sign in again they start as Pending with no access.";
+      return;
+    }
+    ev.target.disabled = true; err.textContent = "";
+    try {
+      await writeLogged("user.delete", "delete", "users", uid, null, row, row.email || uid);
+      const invId = String(row.email || "").toLowerCase();
+      if (invId) {   // a registration that was never used would hand the access straight back
+        try { const s = await db.collection("invites").doc(invId).get(); if (s.exists) await writeLogged("user.registerRemoved", "delete", "invites", invId, null, s.data(), invId); } catch (_) {}
+      }
+      close();
+      renderApp();
+    } catch (e2) { err.textContent = "Could not delete: " + ((e2 && e2.message) || e2); ev.target.disabled = false; delArmed = false; ev.target.textContent = "Delete user"; }
+  } }, "Delete user");
+  if (delBtn) { delBtn.style.marginRight = "auto"; delBtn.style.color = "var(--status-critical)"; }
+
   const drawer = h("div", { class: "drawer", role: "dialog" },
     h("h3", null, "Edit user"),
     h("div", { class: "dsub" }, isSelf ? "This is your own account — role and status are protected." : "Changes take effect the next time this user loads the dashboard."),
@@ -2756,6 +2779,7 @@ function openUserEditor(uid, row) {
     brandGrid,
     err,
     h("div", { class: "actions" },
+      delBtn,
       h("button", { onclick: close }, "Cancel"),
       h("button", { class: "primary", onclick: async ev => {
         ev.target.disabled = true; err.textContent = "";
