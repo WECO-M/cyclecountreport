@@ -3052,7 +3052,7 @@ state.whSel = null;   // id of the stock take open in the detail panel
 function whBrandName(b) { return BRAND_NAMES[b] || b; }
 function whDate(iso) { const d = new Date(iso + "T00:00:00Z"); return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }); }
 // Same week rule as the stores: a week is Friday to Thursday and is named by the Friday that follows it.
-function whWeek(iso) { const d = new Date(iso + "T00:00:00Z"); const add = (5 - d.getUTCDay() + 7) % 7; d.setUTCDate(d.getUTCDate() + add); return d; }
+function whWeek(iso) { const d = new Date(iso + "T00:00:00Z"); const add = ((5 - d.getUTCDay() + 6) % 7) + 1; d.setUTCDate(d.getUTCDate() + add); return d; }
 function whLastPct(t) { const c = (t.counts || []).filter(x => x != null); return c.length ? c[c.length - 1] : null; }
 function whBarWidth(p) { return p == null ? 0 : Math.max(0, Math.min(100, (p - 90) * 10)); }   // bar runs from 90% to 100%
 function whAdjId(t) { return state.country + "_" + t.id; }
@@ -3131,7 +3131,7 @@ function renderWarehouse() {
   frag.append(h("div", { class: "kpis" },
     kpi("Latest stock take", whBrandName(t0.brand), whDate(t0.date) + " · " + num(t0.expected) + " items expected"),
     kpi("Accuracy after the last count", last == null ? "—" : [last.toFixed(1), h("span", { class: "unit" }, "%")], t0.counts[0] != null ? "Count 1 was " + t0.counts[0].toFixed(1) + "%" : "Count 1 not loaded yet"),
-    kpi("Still missing", num(t0.missing), num(t0.unexpected) + " unexpected items found"),
+    kpi("Still missing", num(t0.missing), t0.unexpected != null ? num(t0.unexpected) + " unexpected items found" : "after the last count"),
     kpi("Adjustment", whChip(a0.status), takes.length + " stock take" + (takes.length === 1 ? "" : "s") + " listed")));
 
   // which brand was counted when: the last 8 weeks
@@ -3193,7 +3193,7 @@ function renderWarehouse() {
     list.append(h("button", { class: "whrow" + (isSel ? " on" : ""), "aria-expanded": String(isSel), onclick: () => { state.whSel = isSel ? "none" : t.id; renderApp(); } },
       h("div", { class: "t" }, h("b", null, whBrandName(t.brand)), h("span", null, whDate(t.date))),
       counts,
-      h("div", { class: "nums" }, h("b", null, num(t.expected)), " expected", h("br"), h("b", null, num(t.missing)), " missing · ", h("b", null, num(t.unexpected)), " unexpected"),
+      h("div", { class: "nums" }, h("b", null, num(t.expected)), " expected", h("br"), h("b", null, num(t.missing)), " missing", t.unexpected != null ? [" · ", h("b", null, num(t.unexpected)), " unexpected"] : null),
       h("div", null, whChip(whAdjOf(t).status))));
     if (isSel) list.append(buildDetail(t));
   }
