@@ -1136,11 +1136,17 @@ function roleSees(flag) {
   return !!(ri && ri.active !== false && !(ri.perms && ri.perms[flag] === false));
 }
 function canStores() { return roleSees("viewStores"); }
-// Until the warehouse feed from BigQuery is connected the section holds sample stock takes only, so it is a preview
-// for Administrators; set WH_FEED_READY to true when the real feed and its rules are live.
-const WH_FEED_READY = false;
+// The Warehouse section is for Administrators and for roles whose "View warehouse stock take" switch is ON (off unless set).
+// WH_FEED_READY = false turns it back into an Administrator-only preview.
+const WH_FEED_READY = true;
 function whPreviewOnly() { return !WH_FEED_READY && !!FIREBASE_CONFIG && !(state.user && state.user.role === "admin"); }
-function canWarehouse() { return roleSees("viewWarehouse") && !whPreviewOnly(); }
+function canWarehouse() {
+  if (!FIREBASE_CONFIG) return true;
+  if (!state.user || whPreviewOnly()) return false;
+  if (state.user.role === "admin") return true;
+  const ri = roleInfo(state.user.role);
+  return !!(ri && ri.active !== false && ri.perms && ri.perms.viewWarehouse === true);
+}
 function section() { return !canStores() ? "wh" : !canWarehouse() ? "stores" : state.section; }
 
 function brandAllowed(sheet) {
@@ -2632,7 +2638,7 @@ function openRoleEditor(roleId, data) {
   const pStores = mkSwitch(!!(data.perms && data.perms.manageStores), false);
   const pUsers = mkSwitch(!!(data.perms && data.perms.manageUsers), false);
   const pSeeStores = mkSwitch(!(data.perms && data.perms.viewStores === false), false);
-  const pSeeWh = mkSwitch(!(data.perms && data.perms.viewWarehouse === false), false);
+  const pSeeWh = mkSwitch(!!(data.perms && data.perms.viewWarehouse === true), false);
   const pEditWh = mkSwitch(!!(data.perms && data.perms.editWarehouse), false);
   const err = h("div", { class: "auth-err" }, "");
   const overlay = h("div", { class: "overlay" });
@@ -3024,26 +3030,14 @@ addEventListener("keydown", e => { if (e.key === "Escape") closeUserMenu(); });
 /* ============================== v2: WAREHOUSE STOCK TAKE ============================== */
 // One stock take = one brand in one country, counted in rounds (Count 1, 2, 3…). The four adjustment
 // numbers are typed in by hand for now. Data: Firestore whData/{country} (from BigQuery) and whAdjustments.
-// Until that feed exists the section shows made-up sample stock takes, clearly marked.
+// Only real stock takes are shown; with no feed or no access the list is empty.
 const WH_FIELDS = [
   ["qtyCheckOutMissing", "Check Out (Missing)", "not found after the last count"],
   ["qtyStoreToH", "Update location (Store to H)", "moved from a store into H, the active warehouse location"],
   ["qtyWrongLoc", "Update location (Wrong warehouse location)", "found in a different warehouse location"],
   ["qtyCheckOutZ", "Check Out (Z)", "checked out from Z-staging"],
 ];
-const WH_SAMPLE = {
-  SG: [
-    { id: "s4", brand: "MONOLOQ", date: "2026-11-12", expected: 20164, counts: [96.4, 98.1, 99.0], missing: 198, unexpected: 61 },
-    { id: "s3", brand: "TRT", date: "2026-11-05", expected: 31870, counts: [95.2, 97.6, null], missing: 764, unexpected: 112 },
-    { id: "s2", brand: "SANS", date: "2026-10-29", expected: 27415, counts: [97.0, 98.8, 99.4], missing: 165, unexpected: 48 },
-    { id: "s1", brand: "iORA", date: "2026-10-22", expected: 86320, counts: [94.8, 97.1, 98.6], missing: 1208, unexpected: 301 },
-  ],
-  MY: [
-    { id: "m3", brand: "iORA", date: "2026-11-11", expected: 64210, counts: [95.6, 97.9, null], missing: 1348, unexpected: 220 },
-    { id: "m2", brand: "TRT", date: "2026-10-28", expected: 22480, counts: [96.1, 98.2, 98.9], missing: 247, unexpected: 75 },
-    { id: "m1", brand: "MONOLOQ", date: "2026-10-14", expected: 15930, counts: [97.3, 98.6, 99.2], missing: 127, unexpected: 39 },
-  ],
-};
+const WH_SAMPLE = { SG: [], MY: [] };   // no made-up stock takes: the list holds only what the BigQuery feed published
 state.section = localStorage.getItem("cc.section") === "wh" ? "wh" : "stores";
 state.wh = {};        // countryId -> { takes, sample, loadedAt }
 state.whAdj = {};     // countryId -> { docId -> adjustment }
@@ -3063,13 +3057,14 @@ async function loadWh() {
   const c = state.country;
   if (state.whLoading) return;
   state.whLoading = true;
-  let rec = { takes: WH_SAMPLE[c] || [], sample: true };
+  // made-up samples only on a test copy with no database; signed-in people never see them
+  let rec = { takes: [], sample: false };
   try {
     if (db) {
       const s = await db.collection("whData").doc(c).get();
       if (s.exists) { const d = s.data(); rec = { takes: JSON.parse(d.takes || "[]"), sample: false, loadedAt: d.loadedAt || "" }; }
     }
-  } catch (_) { /* no feed or no access yet: keep the sample */ }
+  } catch (_) { /* no feed or no access: the list stays empty */ }
   const adj = {};
   let adjOff = !db;
   try {
@@ -3118,8 +3113,6 @@ function renderWarehouse() {
   const rec = state.wh[state.country];
   if (!rec) { loadWh(); frag.append(h("div", { class: "loading" }, "Loading warehouse stock takes…")); return frag; }
   const takes = rec.takes.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  if (rec.sample) frag.append(h("div", { class: "banner", role: "status" },
-    "Sample stock takes with made-up numbers. The real list starts once the warehouse feed from BigQuery is connected."));
   if (!takes.length) { frag.append(h("div", { class: "loading" }, "No warehouse stock take recorded yet for " + country().name + ".")); return frag; }
   const canEdit = can("editWarehouse");
   const sel = state.whSel === "none" ? null : (takes.find(t => t.id === state.whSel) || takes[0]);
