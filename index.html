@@ -3102,6 +3102,7 @@ function renderSecSwitch() {
 document.getElementById("secSw").addEventListener("click", ev => {
   const b = ev.target.closest("button"); if (!b) return;
   state.section = b.dataset.sec; localStorage.setItem("cc.section", state.section);
+  if (state.section === "wh") state.wh = {};   // opening Warehouse always fetches the latest stock takes
   renderApp();
   if (section() === "stores") ensureCountryData();
 });
@@ -3133,10 +3134,16 @@ function renderWarehouse() {
   const key = d => d.toISOString().slice(0, 10);
   const done = new Set(takes.map(t => t.brand + "|" + key(whWeek(t.date))));
   const brands = [...new Set(Object.keys(BRAND_NAMES).concat(takes.map(t => t.brand)))];
-  const cal = h("div", { class: "whcal" }, h("span", null, ""), weeks.map(w => h("span", { class: "h" }, w.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }))));
-  for (const b of brands) { cal.append(h("span", { class: "b" }, whBrandName(b))); for (const w of weeks) { const on = done.has(b + "|" + key(w)); cal.append(h("i", { class: on ? "on" : null, title: on ? whBrandName(b) + " counted, week of " + key(w) : null }, on ? "✓" : "")); } }
+  // column heading = the days of that week, e.g. "20–26 Nov" (Friday to Thursday), so a count on 20 Nov sits under its own date
+  const wkRange = w => {
+    const a = new Date(w), b = new Date(w); a.setUTCDate(a.getUTCDate() - 7); b.setUTCDate(b.getUTCDate() - 1);
+    const mon = d => d.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+    return a.getUTCDate() + (mon(a) === mon(b) ? "" : " " + mon(a)) + "–" + b.getUTCDate() + " " + mon(b);
+  };
+  const cal = h("div", { class: "whcal" }, h("span", null, ""), weeks.map(w => h("span", { class: "h" }, wkRange(w))));
+  for (const b of brands) { cal.append(h("span", { class: "b" }, whBrandName(b))); for (const w of weeks) { const on = done.has(b + "|" + key(w)); cal.append(h("i", { class: on ? "on" : null, title: on ? whBrandName(b) + " counted, " + wkRange(w) : null }, on ? "✓" : "")); } }
   frag.append(h("section", { class: "card" }, h("h2", null, "Which brand was counted when"),
-    h("div", { class: "h2sub" }, "A filled box means that brand's warehouse stock was counted in that week (Friday to Thursday, named by the Friday after)."),
+    h("div", { class: "h2sub" }, "A filled box means that brand's warehouse stock was counted in that week (Friday to Thursday)."),
     h("div", { class: "matrix-scroll" }, cal)));
 
   // the selected stock take's detail opens right under its row
@@ -3201,13 +3208,14 @@ function renderWarehouse() {
 function v2Title(box, where) {
   let eyebrow, title, sub;
   if (state.view === "settings") { eyebrow = "Account"; title = where; sub = ""; }
-  else if (section() === "wh") { eyebrow = "Warehouse · " + country().name; title = "Warehouse stock take"; sub = "One brand at a time. Counted in rounds: Count 1, Count 2, Count 3."; }
+  else if (section() === "wh") { eyebrow = "Warehouse · " + country().name; title = "Warehouse stock take"; sub = ""; }
   else {
     let wk = null;
     for (const b of activeBrands()) for (const w of b.weeks) if (!wk || w.serial > wk.serial) wk = w;
     eyebrow = "Stores · " + country().name; title = "Store cycle count"; sub = (wk ? "Week of " + wk.full + " · " : "") + where;
   }
-  box.append(h("span", { class: "v2eyebrow" }, eyebrow), h("h1", { class: "v2h1" }, title), sub ? h("span", { class: "crumb" }, sub) : null);
+  box.append(h("span", { class: "v2eyebrow" }, eyebrow), h("h1", { class: "v2h1" }, title));
+  if (sub) box.append(h("span", { class: "crumb" }, sub));
 }
 function renderCtySwitch() {
   const el = document.getElementById("ctySw"), allowed = allowedCountries();
