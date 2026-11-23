@@ -830,6 +830,9 @@
   .whfield input { width: 100%; }   /* same box as the store adjustment: number on the left, arrows on the right */
   .whdetail textarea { width: 100%; min-height: 64px; margin-top: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--baseline); background: var(--surface-1); color: var(--ink); font: inherit; resize: vertical; }
   .whdetail .line { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; }
+  .whdetail .whsave { color: var(--muted); font-size: 12.5px; }
+  .whdetail .whsave.ok { color: var(--delta-up); font-weight: 600; }
+  .whdetail .whsave.bad { color: var(--status-critical); font-weight: 600; }
   .whdetail .readonly { margin-top: 12px; padding: 9px 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; }
   .whdetail input:disabled, .whdetail select:disabled, .whdetail textarea:disabled { opacity: .7; background: var(--surface-2); }
 
@@ -3074,25 +3077,20 @@ async function loadWh() {
   if (state.view === "dash" && section() === "wh") renderApp();
 }
 
-async function saveWhAdj(t, patch, errEl, btn) {
-  errEl.textContent = "";
-  const rec = state.wh[state.country];
-  if (rec && rec.sample) { errEl.textContent = "These are sample stock takes, so nothing is saved yet."; return; }
-  const id = whAdjId(t), cur = whAdjOf(t);
-  const next = Object.assign({ country: state.country, takeId: t.id, brand: t.brand, date: t.date,
+// Typed-but-not-yet-saved values per stock take, so a page refresh in the background never wipes what is being typed.
+state.whDraft = {};
+state.whChain = Promise.resolve();   // one save at a time, in order
+const whVals = a => { const v = { status: a.status || "", remark: String(a.remark || "").trim() }; for (const [k] of WH_FIELDS) v[k] = a[k] != null ? String(a[k]).trim() : ""; return v; };
+// quiet = auto-save: the page is not rebuilt (the person may already be typing in the next box); only the status chips change.
+async function saveWhAdj(c, t, patch, quiet) {
+  const id = c + "_" + t.id, cur = (state.whAdj[c] || {})[id] || {};
+  const next = Object.assign({ country: c, takeId: t.id, brand: t.brand, date: t.date,
     updatedBy: state.user ? state.user.email : "", updatedAt: new Date().toISOString() }, patch);
-  btn.disabled = true;
-  try {
-    const saved = await writeLogged("whAdjustment.save", "set", "whAdjustments", id, next, cur.logId ? cur : null, whBrandName(t.brand) + " " + t.date);
-    (state.whAdj[state.country] = state.whAdj[state.country] || {})[id] = saved;
-    renderApp();
-  } catch (e) {
-    btn.disabled = false;
-    errEl.textContent = e && e.code === "permission-denied"
-      ? "Saving warehouse adjustments is switched on when v2 goes live." : "Could not save: " + ((e && e.message) || e);
-  }
+  const saved = await writeLogged("whAdjustment.save", "set", "whAdjustments", id, next, cur.logId ? cur : null, c + " " + whBrandName(t.brand) + " " + t.date);
+  (state.whAdj[c] = state.whAdj[c] || {})[id] = saved;
+  if (!quiet) { renderApp(); return; }
+  for (const el of document.querySelectorAll('[data-whchip="' + id + '"]')) { el.textContent = ""; el.append(whChip(saved.status)); }
 }
-
 function renderSecSwitch() {
   const el = document.getElementById("secSw");
   const both = canStores() && canWarehouse();
@@ -3126,7 +3124,7 @@ function renderWarehouse() {
     kpi("Latest stock take", whBrandName(t0.brand), whDate(t0.date) + " · " + num(t0.expected) + " items expected"),
     kpi("Accuracy after the last count", last == null ? "—" : [last.toFixed(1), h("span", { class: "unit" }, "%")], t0.counts[0] != null ? "Count 1 was " + t0.counts[0].toFixed(1) + "%" : "Count 1 not loaded yet"),
     kpi("Still missing", num(t0.missing), t0.unexpected != null ? num(t0.unexpected) + " unexpected items found" : "after the last count"),
-    kpi("Adjustment", whChip(a0.status), takes.length + " stock take" + (takes.length === 1 ? "" : "s") + " listed")));
+    kpi("Adjustment", h("span", { "data-whchip": whAdjId(t0) }, whChip(a0.status)), takes.length + " stock take" + (takes.length === 1 ? "" : "s") + " listed")));
 
   // which brand was counted when: the last 8 weeks
   const end = whWeek(new Date().toISOString().slice(0, 10)), weeks = [];
@@ -3148,18 +3146,46 @@ function renderWarehouse() {
 
   // the selected stock take's detail opens right under its row
   const buildDetail = sel => {
-    const cur = whAdjOf(sel);
-    const inputs = WH_FIELDS.map(([k]) => { const i = h("input", { type: "number", min: "0", step: "1", placeholder: "qty" }); i.value = cur[k] != null ? cur[k] : ""; i.disabled = !canEdit; return i; });
+    const c = state.country, id = whAdjId(sel);
+    const savedNow = () => JSON.stringify(whVals((state.whAdj[c] || {})[id] || {}));
+    const cur = (canEdit && state.whDraft[id]) || whVals(whAdjOf(sel));
+    const inputs = WH_FIELDS.map(([k]) => { const i = h("input", { type: "number", min: "0", step: "1", placeholder: "qty" }); i.value = cur[k]; i.disabled = !canEdit; return i; });
     const status = h("select", { style: "width:150px" }, ADJ_OPTIONS.map(([v, t]) => h("option", { value: v }, v ? t : "Not set")));
-    status.value = cur.status || ""; status.disabled = !canEdit;
-    const remark = h("textarea", { placeholder: "Remark: what was adjusted, or what is still open" }); remark.value = cur.remark || ""; remark.disabled = !canEdit;
+    status.value = cur.status; status.disabled = !canEdit;
+    const remark = h("textarea", { placeholder: "Remark: what was adjusted, or what is still open" }); remark.value = cur.remark; remark.disabled = !canEdit;
     const err = h("div", { class: "auth-err" }, "");
+    const note = h("span", { class: "whsave" }, "Changes are saved automatically.");
     const saveBtn = h("button", { class: "primary" }, "Save");
-    saveBtn.addEventListener("click", () => {
-      const patch = { status: status.value, remark: remark.value.trim() };
-      WH_FIELDS.forEach(([k], i) => { patch[k] = inputs[i].value.trim(); });
-      saveWhAdj(sel, patch, err, saveBtn);
-    });
+    const read = () => whVals(Object.assign({ status: status.value, remark: remark.value }, Object.fromEntries(WH_FIELDS.map(([k], i) => [k, inputs[i].value]))));
+    // Same as the store adjustment: no need to press Save. A change is saved when you leave the box (or press Enter),
+    // or 1.5 seconds after you stop typing; the Save button saves straight away.
+    let timer = null;
+    const flush = () => {
+      clearTimeout(timer); timer = null;
+      state.whChain = state.whChain.then(async () => {
+        const p = read(), snap = JSON.stringify(p);
+        if (snap === savedNow()) { delete state.whDraft[id]; return; }
+        note.className = "whsave"; note.textContent = "Saving\u2026"; err.textContent = ""; saveBtn.disabled = true;
+        try {
+          await saveWhAdj(c, sel, p, true);
+          if (JSON.stringify(read()) === snap) delete state.whDraft[id];
+          note.className = "whsave ok"; note.textContent = "Saved " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+        } catch (e) {
+          note.className = "whsave bad"; note.textContent = "Not saved";
+          err.textContent = e && e.code === "permission-denied" ? "Your login is not allowed to change warehouse adjustments." : "Could not save: " + ((e && e.message) || e);
+        }
+        saveBtn.disabled = false;
+      });
+    };
+    const later = ms => { clearTimeout(timer); timer = setTimeout(flush, ms); };
+    if (canEdit) {
+      for (const el of inputs.concat([status, remark])) {
+        el.addEventListener("input", () => { state.whDraft[id] = read(); note.className = "whsave"; note.textContent = "Not saved yet\u2026"; later(1500); });
+        el.addEventListener("change", () => { state.whDraft[id] = read(); later(300); });
+      }
+      if (state.whDraft[id] && JSON.stringify(state.whDraft[id]) !== savedNow()) { note.textContent = "Not saved yet\u2026"; later(300); }
+    }
+    saveBtn.addEventListener("click", flush);
     return h("div", { class: "whdetail" },
       h("h3", null, whBrandName(sel.brand) + " warehouse stock take"),
       h("div", { class: "meta" }, whDate(sel.date) + " · " + country().name + " · " + num(sel.expected) + " items expected"),
@@ -3173,7 +3199,7 @@ function renderWarehouse() {
           h("div", { class: "line" }, h("span", { style: "font-size:13.5px;font-weight:600" }, "Adjustment status"), status),
           remark,
           canEdit
-            ? h("div", { class: "line" }, h("span", { style: "color:var(--muted);font-size:12.5px" }, "Saved changes are recorded in the activity log."), saveBtn)
+            ? h("div", { class: "line" }, note, saveBtn)
             : h("div", { class: "readonly" }, "View only. Your login can see the warehouse stock take and its adjustment, and cannot change them."),
           err)));
   };
@@ -3194,7 +3220,7 @@ function renderWarehouse() {
       h("div", { class: "t" }, h("b", null, whBrandName(t.brand)), h("span", null, whDate(t.date))),
       counts,
       h("div", { class: "nums" }, h("b", null, num(t.expected)), " expected", h("br"), h("b", null, num(t.missing)), " missing", t.unexpected != null ? [" · ", h("b", null, num(t.unexpected)), " unexpected"] : null),
-      h("div", null, whChip(whAdjOf(t).status))));
+      h("div", { "data-whchip": whAdjId(t) }, whChip(whAdjOf(t).status))));
     if (isSel) list.append(buildDetail(t));
   }
 
@@ -3485,7 +3511,7 @@ function startApp() {
 async function signOutLogged() {
   await logEvent("account.signout");
   try { sessionStorage.removeItem("cc.signedIn"); } catch (_) {}
-  state.auditUntil = 0; state.audit = null; state.v2hide = {};
+  state.auditUntil = 0; state.audit = null; state.v2hide = {}; state.whDraft = {}; state.wh = {}; state.whAdj = {};
   if (auth) await auth.signOut();
 }
 function openSettings(tab) {
